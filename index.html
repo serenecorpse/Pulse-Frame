@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101014">
+  <title>Pulseframe — Music Video Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="sidebar-layout.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="Pulseframe home">
+        <span class="brand-mark"><i></i><i></i><i></i><i></i></span>
+        <span>pulseframe<span class="brand-studio"> / studio</span></span>
+      </a>
+      <div class="project-name"><span class="live-dot"></span><input id="projectName" aria-label="Project name" value="Midnight memories"><span class="save-state" id="saveState">All changes saved</span></div>
+      <div class="top-actions">
+        <button class="button button-quiet" id="undoButton" title="Undo">↶ <span>Undo</span></button>
+        <button class="button button-quiet" id="redoButton" title="Redo">↷</button>
+        <span class="top-divider"></span>
+        <button class="button button-quiet" id="openProjectButton">Open project</button>
+        <button class="button button-quiet" id="saveProjectButton">Save project</button>
+        <button class="button button-primary" id="exportButton"><span class="export-icon">↗</span> Export video</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="sidebar">
+        <div class="sidebar-tabs" role="tablist">
+          <button class="sidebar-tab active" data-panel="mediaPanel">◈ <span>Media</span></button>
+          <button class="sidebar-tab" data-panel="effectsPanel">✳ <span>Effects</span></button>
+          <button class="sidebar-tab" data-panel="textPanel">T <span>Text</span></button>
+          <button class="sidebar-tab" data-panel="motionPanel">◉ <span>Motion</span></button>
+          <button class="sidebar-tab" data-panel="upscalerPanel">⇧ <span>Upscale</span></button>
+        </div>
+        <section class="sidebar-content" id="mediaPanel">
+          <div class="section-heading"><div><h2>Your media</h2><p id="assetCount">0 assets in this project</p></div><button class="icon-button" id="browseButton" title="Import media">＋</button></div>
+          <button class="upload-zone" id="dropZone">
+            <span class="upload-symbol">↑</span><strong>Drop your files here</strong><span>or <u>browse to upload</u></span>
+            <small>Audio, video, images &amp; lyrics</small>
+          </button>
+          <div class="media-filters"><button class="filter-chip active" data-filter="all">All</button><button class="filter-chip" data-filter="audio">Audio</button><button class="filter-chip" data-filter="video">Video</button><button class="filter-chip" data-filter="image">Images</button></div>
+          <div class="asset-list" id="assetList"><div class="empty-assets"><span>◈</span><p>Your imported files<br>will show up here.</p></div></div>
+          <div class="sidebar-tip"><span>✦</span><span>Tip: Add an audio track to bring your visualizers to life.</span></div>
+        </section>
+        <section class="sidebar-content hidden" id="effectsPanel">
+          <div class="section-heading"><div><h2>Visualizer library</h2><p>Audio-reactive effects</p></div><span class="live-pill">LIVE</span></div>
+          <div class="effect-group"><span class="group-label">EQUALIZERS</span><div class="effect-grid">
+            <button class="effect-card" data-effect="spectrum"><span class="effect-preview spectrum-preview">▂▅▇▃▆█▂</span><span>Spectrum</span></button>
+            <button class="effect-card" data-effect="circular"><span class="effect-preview circular-preview">◉</span><span>Circular</span></button>
+            <button class="effect-card" data-effect="waveform"><span class="effect-preview waveform-preview">∿∿∿∿</span><span>Waveform</span></button>
+            <button class="effect-card" data-effect="neon"><span class="effect-preview neon-preview">▂▅▇▃▆</span><span>Neon bars</span></button>
+          </div></div>
+          <div class="effect-group"><span class="group-label">ATMOSPHERE</span><div class="effect-grid">
+            <button class="effect-card" data-effect="particles"><span class="effect-preview particles-preview">✧ · ✦</span><span>Particles</span></button>
+            <button class="effect-card" data-effect="pulse"><span class="effect-preview pulse-preview">◌</span><span>Beat pulse</span></button>
+          </div></div>
+          <div class="sidebar-tip"><span>✦</span><span>Effects respond to your music automatically. Add multiple for more depth.</span></div>
+        </section>
+        <section class="sidebar-content hidden" id="textPanel">
+          <div class="section-heading"><div><h2>Lyrics &amp; text</h2><p>Words that move with music</p></div></div>
+          <label class="field-label" for="lyricsInput">LYRICS <span>Paste LRC, SBV, or plain text</span></label>
+          <textarea id="lyricsInput" class="lyrics-input" placeholder="[00:12.00]First line of your song&#10;[00:16.50]Second line comes in here&#10;&#10;SBV: 0:00:12.000,0:00:16.500&#10;Synchronized caption line"></textarea>
+          <div class="field-row"><label class="field-label">TEXT COLOR</label><input id="lyricColor" type="color" value="#ffffff" aria-label="Lyric color"></div>
+          <label class="toggle-row"><span><strong>Karaoke highlight</strong><small>Highlight the active lyric</small></span><input id="karaokeToggle" type="checkbox" checked><i></i></label>
+          <button class="button button-outline full-width" id="addTextButton">＋ Add text layer</button>
+        </section>
+        <section class="sidebar-content hidden" id="motionPanel">
+          <div class="section-heading"><div><h2>Image to motion</h2><p>Give still images a camera move</p></div><span class="live-pill">4K</span></div>
+          <label class="field-label" for="motionImageSelect">IMAGE LAYER</label>
+          <select id="motionImageSelect" class="inspector-select"><option value="">Import an image to begin</option></select>
+          <label class="field-label motion-label" for="motionPresetSelect">CAMERA PRESET</label>
+          <select id="motionPresetSelect" class="inspector-select">
+            <option value="ken-burns">Ken Burns</option><option value="pan-left">Pan left</option><option value="pan-right">Pan right</option>
+            <option value="pan-up">Pan up</option><option value="pan-down">Pan down</option><option value="diagonal">Diagonal drift</option>
+            <option value="orbit">Orbit drift</option><option value="dolly">Dolly zoom</option><option value="reveal">Reveal</option>
+            <option value="detail-tour">Detail tour</option><option value="handheld">Handheld</option><option value="breathing">Breathing</option>
+          </select>
+          <div class="motion-fields">
+            <label>Duration <span>sec</span><input id="motionDuration" type="number" min="1" max="600" step="1" value="12"></label>
+            <label>Easing<select id="motionEasing"><option value="pchip">Smooth · PCHIP</option><option value="ease-in-out">Ease in / out</option><option value="ease-in">Ease in</option><option value="ease-out">Ease out</option><option value="linear">Linear</option><option value="hold">Hold</option></select></label>
+          </div>
+          <label class="slider-label"><span>Intensity <b id="motionIntensityValue">65%</b></span><input id="motionIntensity" type="range" min="0" max="100" value="65"></label>
+          <button class="button button-primary full-width" id="applyMotionPreset">Apply camera move</button>
+          <div class="motion-tool-row"><button class="button button-outline" id="addMotionKeyframe">＋ Keyframe</button><button class="button button-outline" id="addMotionPoint">＋ Point of interest</button></div>
+          <label class="toggle-row motion-toggle"><span><strong>Safe-area guides</strong><small>Show start/end camera frames</small></span><input id="motionGuidesToggle" type="checkbox" checked><i></i></label>
+          <div class="motion-keyframes-heading"><span>CAMERA KEYFRAMES</span><span id="motionKeyframeCount">0</span></div>
+          <svg id="motionKeyframeTrack" class="motion-keyframe-track" viewBox="0 0 300 92" role="img" aria-label="Camera keyframe tracks"></svg>
+          <div id="motionKeyframeList" class="motion-keyframe-list"><p>Apply a preset, then add or drag keyframes.</p></div>
+          <div class="motion-look">
+            <span class="group-label">LOOK</span>
+            <label><input type="checkbox" data-look="dim"> Dim</label>
+            <label><input type="checkbox" data-look="vignette"> Vignette</label>
+            <label><input type="checkbox" data-look="grain"> Film grain</label>
+            <label><input type="checkbox" data-look="dust"> Floating dust</label>
+            <label><input type="checkbox" data-look="pulse"> Audio pulse</label>
+          </div>
+          <div class="sidebar-tip"><span>✦</span><span>Drag the outlined start and end frames over the preview to shape the move.</span></div>
+        </section>
+        <section class="sidebar-content hidden" id="upscalerPanel">
+          <div class="section-heading"><div><h2>Video upscaler</h2><p>Fast browser-based resizing</p></div><span class="live-pill">FAST</span></div>
+          <input type="file" id="upscaleFileInput" hidden multiple accept="video/mp4,video/quicktime,video/x-matroska,video/webm,video/x-msvideo,.mp4,.mov,.mkv,.webm,.avi">
+          <button class="button button-outline full-width" id="upscaleBrowseButton">＋ Choose videos</button>
+          <label class="field-label upscaler-label" for="upscaleQueue">BATCH QUEUE <span id="upscaleQueueCount">0</span></label>
+          <select id="upscaleQueue" class="inspector-select upscaler-queue" size="3" aria-label="Video batch queue"></select>
+          <button class="button button-quiet full-width upscaler-remove" id="upscaleRemoveButton" disabled>Remove selected</button>
+          <div class="upscaler-metadata" id="upscaleMetadata">Choose a video to inspect its browser-readable metadata.</div>
+          <div class="upscaler-fields">
+            <label>Preset<select id="upscalePreset"><option value="custom">Custom</option><option value="draft">Fast draft · 720p</option><option value="youtube1080">YouTube 1080p</option><option value="youtube4k">YouTube 4K</option><option value="archive">Archive · keep source if larger</option></select></label>
+            <label>Target<select id="upscaleTarget"><option value="720">720p</option><option value="1080" selected>1080p</option><option value="2160">4K · 2160p</option></select></label>
+            <label>Frame<select id="upscaleAspect"><option value="source">Source</option><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="1:1">Square</option></select></label>
+            <label>Fit<select id="upscaleFit"><option value="pad">Pad (default)</option><option value="crop">Crop to fill</option><option value="stretch">Stretch</option></select></label>
+            <label>Method<select id="upscaleMethod"><option value="fast">Fast · browser resampling</option><option value="balanced" disabled>Balanced · model not installed</option><option value="best" disabled>Best · model not installed</option></select></label>
+            <label>FPS<select id="upscaleFps"><option value="source">Match source (best effort)</option><option value="24">24 fps</option><option value="30">30 fps</option><option value="60">60 fps</option></select></label>
+            <label>Codec<select id="upscaleCodec"><option value="vp9">WebM · VP9</option><option value="vp8">WebM · VP8</option><option value="h264">MP4 · H.264</option><option value="h265">MP4 · H.265</option></select></label>
+          </div>
+          <label class="field-label upscaler-label" for="upscaleAlready">SOURCE SIZE POLICY</label>
+          <select id="upscaleAlready" class="inspector-select"><option value="keep">Keep source as-is (default)</option><option value="downscale">Downscale to target</option></select>
+          <label class="slider-label upscaler-disabled"><span>Denoise <b>unavailable</b></span><input type="range" min="0" max="100" value="0" disabled></label>
+          <label class="slider-label upscaler-disabled"><span>Sharpen <b>unavailable</b></span><input type="range" min="0" max="100" value="0" disabled></label>
+          <div class="upscaler-notice" id="upscaleNotice">Fast mode uses the browser's high-quality canvas resampler. Neural models, denoise/sharpen filters, ffprobe, and frame-accurate/resumable FFmpeg processing are unavailable. Encoder options depend on browser support.</div>
+          <div class="upscaler-preview">
+            <div><span>BEFORE</span><video id="upscaleSourceVideo" muted playsinline controls></video></div>
+            <div><span>AFTER · PREVIEW</span><canvas id="upscalePreviewCanvas" width="640" height="360"></canvas></div>
+          </div>
+          <div class="upscaler-job">
+            <div><span id="upscaleStatus">Select one or more videos to begin.</span><span id="upscalePercent">0%</span></div>
+            <div class="progress-track"><span id="upscaleProgressBar"></span></div>
+            <span class="upscaler-eta" id="upscaleEta">Estimated size and time vary by content and device.</span>
+          </div>
+          <div class="upscaler-actions">
+            <button class="button button-primary" id="upscaleStartButton" disabled>Process batch</button>
+            <button class="button button-outline" id="upscaleCancelButton" disabled>Cancel</button>
+          </div>
+          <div class="sidebar-tip"><span>✦</span><span>Browser exports use the selected supported encoder and re-encode captured media. For stream-copy audio, exact timing, resumable chunks, or neural models, use a configured FFmpeg/AI backend.</span></div>
+        </section>
+      </aside>
+
+      <section class="center-column">
+        <div class="preview-toolbar">
+          <div class="preview-title"><span class="status-dot"></span> PREVIEW <span class="preview-live">LIVE</span></div>
+          <div class="preview-tools"><button class="small-tool" id="fitButton" title="Fit preview">⌗ <span>Fit</span></button><span class="tool-divider"></span><select id="aspectSelect" aria-label="Canvas aspect ratio"><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option><option value="4:5">4:5</option></select><button class="small-tool" id="fullscreenButton" title="Fullscreen preview">⛶</button></div>
+        </div>
+        <div class="preview-stage-wrap">
+          <div class="preview-stage" id="previewStage">
+            <canvas id="previewCanvas" width="1280" height="720"></canvas>
+            <div class="motion-guides hidden" id="motionGuides"><div class="motion-guide motion-guide-start" data-camera-frame="start"><span>START</span></div><div class="motion-guide motion-guide-end" data-camera-frame="end"><span>END</span></div></div>
+            <div class="preview-placeholder" id="previewPlaceholder">
+              <div class="placeholder-orbit"><span>♫</span></div>
+              <h2>Your next visual starts here.</h2><p>Drop in a track, then bring it to life.</p>
+              <button class="button button-primary" id="placeholderImport">＋ Import your media</button>
+            </div>
+            <div class="preview-overlay"><span id="previewResolution">1280 × 720</span><span id="previewTimecode">00:00:00:00</span></div>
+          </div>
+        </div>
+        <div class="transport">
+          <div class="transport-side"><button class="transport-icon" id="skipBackButton" title="Previous">|◀</button><button class="play-button" id="playButton" title="Play">▶</button><button class="transport-icon" id="skipForwardButton" title="Next">▶|</button><span class="time-display"><b id="currentTime">00:00</b><span> / </span><span id="durationTime">00:00</span></span></div>
+          <div class="transport-side"><button class="transport-icon" id="volumeButton" title="Toggle audio">◖</button><input id="volumeSlider" class="volume-slider" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="Volume"><button class="transport-icon" id="loopButton" title="Loop playback">⟳</button></div>
+        </div>
+        <div class="timeline-panel">
+          <div class="timeline-toolbar"><div class="timeline-heading"><span class="timeline-glyph">▤</span><strong>Timeline</strong><span class="timeline-subtitle">Arrange your composition</span></div><div class="timeline-actions"><button class="timeline-action" id="splitButton" title="Split selected clip at playhead">⌁ <span>Split</span></button><button class="timeline-action" id="duplicateButton" title="Duplicate selected clip">▣</button><button class="timeline-action" id="deleteButton" title="Delete selected clip">⌫</button><span class="tool-divider"></span><button class="timeline-action" id="zoomOutButton" title="Zoom out">−</button><input id="zoomSlider" type="range" min="40" max="140" value="80" aria-label="Timeline zoom"><button class="timeline-action" id="zoomInButton" title="Zoom in">＋</button></div></div>
+          <div class="timeline-scroll" id="timelineScroll">
+            <div class="timeline-ruler-row"><div class="track-label-spacer"></div><div class="timeline-ruler" id="timelineRuler"></div></div>
+            <div class="timeline-body" id="timelineBody">
+              <div class="playhead" id="playhead"><span></span></div>
+              <div class="track-row" data-track="video"><div class="track-label"><span class="track-icon video-icon">▣</span><span>Video</span><button class="track-more">•••</button></div><div class="track-lane" data-lane="video"></div></div>
+              <div class="track-row" data-track="image"><div class="track-label"><span class="track-icon image-icon">▧</span><span>Images</span><button class="track-more">•••</button></div><div class="track-lane" data-lane="image"></div></div>
+              <div class="track-row" data-track="visualizer"><div class="track-label"><span class="track-icon visualizer-icon">✳</span><span>Visualizers</span><button class="track-more">•••</button></div><div class="track-lane" data-lane="visualizer"></div></div>
+              <div class="track-row" data-track="text"><div class="track-label"><span class="track-icon text-icon">T</span><span>Text &amp; lyrics</span><button class="track-more">•••</button></div><div class="track-lane" data-lane="text"></div></div>
+              <div class="track-row" data-track="audio"><div class="track-label"><span class="track-icon audio-icon">♫</span><span>Audio</span><button class="track-more">•••</button></div><div class="track-lane" data-lane="audio"></div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="inspector">
+        <div class="inspector-heading"><div><span class="inspector-icon">☷</span><h2>Inspector</h2></div><button class="icon-button muted-icon" title="More options">•••</button></div>
+        <div class="inspector-empty" id="inspectorEmpty"><div class="inspector-empty-icon">◇</div><strong>Nothing selected</strong><p>Select a layer in your timeline to see its properties.</p></div>
+        <div class="inspector-content hidden" id="inspectorContent">
+          <div class="selected-layer"><div id="selectedLayerIcon" class="selected-layer-icon">▧</div><div><strong id="selectedLayerName">Layer</strong><small id="selectedLayerType">IMAGE LAYER</small></div><button id="layerVisibilityButton" class="visibility-button" title="Toggle visibility">◉</button></div>
+          <div class="inspector-section"><div class="inspector-section-title"><span>TRANSFORM</span><button class="reset-button" id="resetTransformButton">Reset</button></div>
+            <div class="control-grid"><label>Position X<div class="number-input"><input type="number" id="posX" value="640"><span>px</span></div></label><label>Position Y<div class="number-input"><input type="number" id="posY" value="360"><span>px</span></div></label></div>
+            <label class="slider-label"><span>Scale <b id="scaleValue">100%</b></span><input type="range" id="scaleSlider" min="10" max="250" value="100"></label>
+            <label class="slider-label"><span>Rotation <b id="rotationValue">0°</b></span><input type="range" id="rotationSlider" min="-180" max="180" value="0"></label>
+            <label class="slider-label"><span>Opacity <b id="opacityValue">100%</b></span><input type="range" id="opacitySlider" min="0" max="100" value="100"></label>
+          </div>
+          <div class="inspector-section"><div class="inspector-section-title"><span>CLIP TIMING</span></div><div class="control-grid"><label>Start<div class="number-input"><input type="number" id="clipStart" min="0" step="0.1" value="0"><span>sec</span></div></label><label>Duration<div class="number-input"><input type="number" id="clipDuration" min="0.1" step="0.1" value="10"><span>sec</span></div></label></div></div>
+          <div class="inspector-section"><div class="inspector-section-title"><span>ANIMATION</span></div><select id="animationSelect" class="inspector-select"><option value="none">None</option><option value="pulse">Beat pulse</option><option value="float">Gentle float</option><option value="zoom">Slow zoom</option></select></div>
+          <div class="inspector-section visualizer-settings hidden" id="visualizerSettings"><div class="inspector-section-title"><span>AUDIO RESPONSE</span></div><label class="slider-label"><span>Sensitivity <b id="sensitivityValue">70%</b></span><input id="sensitivitySlider" type="range" min="10" max="150" value="70"></label><label class="field-label color-label">EFFECT COLOR <input id="effectColor" type="color" value="#a78bfa"></label></div>
+        </div>
+      </aside>
+    </main>
+    <input type="file" id="fileInput" hidden multiple accept="audio/*,video/*,image/*,.lrc,.sbv,.txt">
+    <input type="file" id="projectInput" hidden accept=".json,application/json">
+  </div>
+  <div class="toast-region" id="toastRegion" aria-live="polite"></div>
+  <dialog id="audioExtractDialog" class="export-dialog audio-extract-dialog">
+    <div class="export-dialog-icon">♫</div><h2>Extract audio</h2><p class="dialog-description" id="audioExtractName">Extracting audio from your video…</p>
+    <div class="export-progress">
+      <div><span id="audioExtractStatus">Preparing video…</span><span id="audioExtractPercent">0%</span></div>
+      <div class="progress-track"><span id="audioExtractProgress"></span></div>
+      <button class="button button-outline full-width" id="cancelAudioExtractButton" type="button">Cancel extraction</button>
+    </div>
+    <p class="export-note">Creates a WAV file and adds it to your project.</p>
+  </dialog>
+  <dialog id="exportDialog" class="export-dialog">
+    <form method="dialog" class="dialog-close-form"><button class="dialog-close" aria-label="Close">×</button></form>
+    <div class="export-dialog-icon">↗</div><h2>Export your video</h2><p class="dialog-description">Render your composition as a high-quality video.</p>
+    <div class="export-options"><label>Format<select id="exportFormat"><option value="video/webm;codecs=vp9,opus">WebM · VP9</option><option value="video/webm;codecs=vp8,opus">WebM · VP8</option></select></label><label>Resolution<select id="exportQuality"><option value="720">720p</option><option value="1080" selected>1080p</option><option value="1440">1440p</option><option value="2160">4K · 2160p</option></select></label><label>Frame rate<select id="exportFps"><option value="24">24 fps</option><option value="30" selected>30 fps</option><option value="60">60 fps</option></select></label></div>
+    <div class="export-progress hidden" id="exportProgress"><div><span id="exportStatus">Preparing export…</span><span><span id="exportPercent">0%</span> · <span id="exportEta">ETA —</span></span></div><div class="progress-track"><span id="progressBar"></span></div><button class="button button-outline full-width" id="cancelExportButton" type="button">Cancel export</button></div>
+    <button class="button button-primary full-width export-start" id="startExportButton" type="button">Start export <span>↗</span></button>
+    <p class="export-note">Keep this tab open while your video renders.</p>
+  </dialog>
+  <script src="motion.js"></script>
+  <script src="upscaler.js"></script>
+  <script src="lyrics.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

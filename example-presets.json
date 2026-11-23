@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "presets": [
+    { "id": "ken-burns", "name": "Ken Burns", "duration": 12, "easing": "pchip", "intensity": 0.65 },
+    { "id": "pan-left", "name": "Pan left", "duration": 10, "easing": "pchip", "intensity": 0.65 },
+    { "id": "pan-right", "name": "Pan right", "duration": 10, "easing": "pchip", "intensity": 0.65 },
+    { "id": "pan-up", "name": "Pan up", "duration": 10, "easing": "pchip", "intensity": 0.65 },
+    { "id": "pan-down", "name": "Pan down", "duration": 10, "easing": "pchip", "intensity": 0.65 },
+    { "id": "diagonal", "name": "Diagonal drift", "duration": 12, "easing": "pchip", "intensity": 0.65 },
+    { "id": "orbit", "name": "Orbit drift", "duration": 12, "easing": "pchip", "intensity": 0.65 },
+    { "id": "dolly", "name": "Dolly zoom", "duration": 10, "easing": "pchip", "intensity": 0.65 },
+    { "id": "reveal", "name": "Reveal", "duration": 8, "easing": "ease-in-out", "intensity": 0.65 },
+    { "id": "detail-tour", "name": "Detail tour", "duration": 12, "easing": "pchip", "intensity": 0.65 },
+    { "id": "handheld", "name": "Handheld", "duration": 12, "easing": "pchip", "intensity": 0.4 },
+    { "id": "breathing", "name": "Breathing", "duration": 12, "easing": "pchip", "intensity": 0.4 }
+  ]
+}

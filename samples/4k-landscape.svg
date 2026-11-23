@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3840" height="2160" viewBox="0 0 3840 2160">
+  <defs>
+    <linearGradient id="sky" x2="0" y2="1">
+      <stop stop-color="#08152f"/>
+      <stop offset=".48" stop-color="#4f5c99"/>
+      <stop offset="1" stop-color="#f19b8b"/>
+    </linearGradient>
+    <linearGradient id="water" x2="0" y2="1">
+      <stop stop-color="#374a72"/>
+      <stop offset="1" stop-color="#101c37"/>
+    </linearGradient>
+    <linearGradient id="peak" x2="0" y2="1">
+      <stop stop-color="#8797b7"/>
+      <stop offset="1" stop-color="#263755"/>
+    </linearGradient>
+    <radialGradient id="sun">
+      <stop stop-color="#fff5ce"/>
+      <stop offset=".68" stop-color="#ffd9ad"/>
+      <stop offset="1" stop-color="#ffbf9b" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="ripples" width="240" height="74" patternUnits="userSpaceOnUse">
+      <path d="M0 26c40-14 80-14 120 0s80 14 120 0M-60 61c40-14 80-14 120 0s80 14 120 0 80-14 120 0 80 14 120 0" fill="none" stroke="#b6c8dd" stroke-opacity=".14" stroke-width="4"/>
+    </pattern>
+  </defs>
+  <rect width="3840" height="2160" fill="url(#sky)"/>
+  <circle cx="2660" cy="690" r="430" fill="url(#sun)"/>
+  <circle cx="2660" cy="690" r="170" fill="#ffe5ba"/>
+  <path d="m0 1210 430-300 310 225 410-510 330 410 390-500 370 420 300-250 410 365 365-410 525 480v545H0Z" fill="#627895"/>
+  <path d="m810 1135 340-510 186 230-120 40-105-81-74 181-105-42-122 250Zm760-200 300-400 194 220-130-25-65-57-79 148-85-39-85 154Zm1125 144 370-409 280 339-130-43-83-76-77 171-128-20-73 91Z" fill="#d2d7d4" opacity=".8"/>
+  <path d="M0 1275c400-80 720-100 1120-30s800 100 1210 10 1010-58 1510 30v875H0Z" fill="#253b5c"/>
+  <path d="M0 1370c600-95 980-20 1420 45s900-85 1280-45 740 80 1140 18v772H0Z" fill="url(#water)"/>
+  <path d="M0 1370c600-95 980-20 1420 45s900-85 1280-45 740 80 1140 18v772H0Z" fill="url(#ripples)"/>
+  <path d="M0 1680c400-88 630-70 970 0s610 72 960 7 770-80 1120-11 530 64 790 5v479H0Z" fill="#0c1932" opacity=".65"/>
+  <g fill="#f3c7a6" opacity=".68">
+    <circle cx="490" cy="485" r="8"/><circle cx="780" cy="350" r="5"/><circle cx="1460" cy="490" r="7"/>
+    <circle cx="3270" cy="376" r="8"/><circle cx="3440" cy="570" r="5"/><circle cx="2180" cy="310" r="5"/>
+  </g>
+  <text x="1920" y="1990" text-anchor="middle" fill="#f1dfd1" font-family="sans-serif" font-size="54" letter-spacing="18" opacity=".68">STILLWATER · 4K MOTION STUDY</text>
+</svg>

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>4K Image to Motion — Pulseframe</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:#101014;color:#f4f2f8;font:14px "Segoe UI",sans-serif;display:grid;place-items:center;padding:24px}.card{width:min(980px,100%);background:#19181f;border:1px solid #34313e;border-radius:14px;padding:24px;box-shadow:0 20px 70px #0007}.eyebrow{color:#b79cff;font:11px Consolas,monospace;letter-spacing:1px}h1{font-size:clamp(22px,4vw,36px);margin:8px 0}.intro{color:#9995a3;margin:0 0 20px}.preview{background:#090a10;border-radius:9px;overflow:hidden;aspect-ratio:16/9}.preview canvas{width:100%;height:100%;display:block}.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px}.toolbar select,.toolbar button{background:#292733;border:1px solid #464250;border-radius:6px;color:#eee;padding:9px 12px}.toolbar button.primary{background:#9274ed;border-color:#9274ed}.toolbar button:disabled{opacity:.5}.meta{margin-left:auto;color:#8f8b98;font:11px Consolas,monospace}.status{min-height:20px;margin-top:12px;color:#b8b2c2;font-size:12px}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <span class="eyebrow">3840 × 2160 SOURCE · DETERMINISTIC CAMERA</span>
+    <h1>Stillwater, in motion.</h1>
+    <p class="intro">A 4K landscape rendered with a smooth virtual camera move. Change the preset or export a short WebM sample.</p>
+    <div class="preview"><canvas id="sampleCanvas" width="1280" height="720"></canvas></div>
+    <div class="toolbar">
+      <select id="samplePreset" aria-label="Motion preset">
+        <option value="ken-burns">Ken Burns</option><option value="pan-left">Pan left</option><option value="orbit">Orbit drift</option><option value="reveal">Reveal</option><option value="dolly">Dolly zoom</option>
+      </select>
+      <button id="restartButton">Restart preview</button>
+      <button class="primary" id="exportSampleButton">Export 10s WebM</button>
+      <span class="meta">4K image · 30 fps preview</span>
+    </div>
+    <div class="status" id="sampleStatus" aria-live="polite">Loading the 4K source image…</div>
+  </main>
+  <script src="../motion.js"></script>
+  <script src="motion-preview.js"></script>
+</body>
+</html>
