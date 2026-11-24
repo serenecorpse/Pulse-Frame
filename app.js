@@ -72,9 +72,12 @@
     $("#saveState").style.color = "#d9b477";
     clearTimeout(state.dirtyTimer);
     state.dirtyTimer = setTimeout(() => {
-      saveProject(false);
-      $("#saveState").textContent = "All changes saved";
-      $("#saveState").style.color = "";
+      if (saveProject(false)) {
+        $("#saveState").textContent = "All changes saved";
+        $("#saveState").style.color = "";
+      } else {
+        $("#saveState").textContent = "Autosave failed";
+      }
     }, 1000);
   }
   function niceName(name, max = 22) {
@@ -108,22 +111,19 @@
       const type = classify(file);
       const restored = state.pendingAssetIds?.find(item => item.name === file.name && item.type === type);
       const asset = { id: restored?.id || crypto.randomUUID(), file, name: file.name, type, url: URL.createObjectURL(file), size: file.size, duration: 0, text: "" };
-      if (restored) state.pendingAssetIds = state.pendingAssetIds.filter(item => item !== restored);
-      state.assets.push(asset);
       if (type === "lyrics" || type === "text") {
         try {
           asset.text = await file.text();
           $("#lyricsInput").value = asset.text;
           showPanel("textPanel");
           updateLyricsClip();
-        } catch { toast(`Couldn't read ${file.name}.`, "error"); }
+        } catch { URL.revokeObjectURL(asset.url); toast(`Couldn't read ${file.name}.`, "error"); continue; }
       } else if (type === "image") {
         const img = new Image();
         img.src = asset.url;
-        try { await img.decode(); images.set(asset.id, img); } catch { toast(`Couldn't load ${file.name}.`, "error"); continue; }
+        try { await img.decode(); images.set(asset.id, img); } catch { URL.revokeObjectURL(asset.url); toast(`Couldn't load ${file.name}.`, "error"); continue; }
         if (img.naturalWidth > 8192 || img.naturalHeight > 8192) {
           images.delete(asset.id);
-          state.assets = state.assets.filter(item => item.id !== asset.id);
           URL.revokeObjectURL(asset.url);
           toast(`${file.name} exceeds the 8K image limit.`, "error");
           continue;
@@ -141,7 +141,7 @@
         vid.src = asset.url;
         vid.preload = "metadata";
         try { await new Promise((resolve, reject) => { vid.onloadedmetadata = resolve; vid.onerror = reject; }); }
-        catch { toast(`Couldn't load ${file.name}.`, "error"); continue; }
+        catch { URL.revokeObjectURL(asset.url); toast(`Couldn't load ${file.name}.`, "error"); continue; }
         asset.duration = Math.max(.1, vid.duration || 10);
         videos.set(asset.id, vid);
         connectVideoAudio(asset.id, vid);
@@ -157,6 +157,8 @@
           asset.duration = Number.isFinite(duration) ? duration : 30;
         } catch { asset.duration = 30; toast(`Duration metadata unavailable for ${file.name}.`); }
       }
+      if (restored) state.pendingAssetIds = state.pendingAssetIds.filter(item => item !== restored);
+      state.assets.push(asset);
       if (type === "audio" || type === "video" || type === "image") {
         const lane = type === "audio" ? "audio" : type;
         if (!state.clips.some(clip => clip.assetId === asset.id)) {
@@ -1540,13 +1542,15 @@
       clips: state.clips.map(({ id, assetId, name, lane, start, duration, x, y, scale, rotation, opacity, visible, animation, effect, isLyrics, motion }) => ({ id, assetId, name, lane, start, duration, x, y, scale, rotation, opacity, visible, animation, effect, isLyrics, motion })),
       effects: state.effects
     };
+    let saved = true;
     try { localStorage.setItem("pulseframe-project", JSON.stringify(project)); }
-    catch { toast("Project settings couldn't be autosaved. Export a project file to keep your work.", "error"); }
+    catch { saved = false; toast("Project settings couldn't be autosaved. Export a project file to keep your work.", "error"); }
     if (download) {
       const blob = new Blob([JSON.stringify(project, null, 2)], { type: "application/json" });
       downloadBlob(blob, `${safeFileName(project.name)}.pulseframe.json`);
       toast("Project configuration downloaded.", "success");
     }
+    return saved;
   }
   function safeFileName(name) { return (name || "pulseframe-project").replace(/[<>:"/\\|?*\x00-\x1F]/g, "-").trim() || "pulseframe-project"; }
   function downloadBlob(blob, filename) {

@@ -19,6 +19,7 @@ Presets include Ken Burns, directional pans, diagonal drift, orbit, dolly, revea
 ## Tests and examples
 
 - Open `tests/motion.test.html` to run browser unit tests for crop clamping, interpolation, presets, and chunk concatenation.
+- For editor regression tests, run `python -m http.server` from the project directory and open `http://localhost:8000/tests/editor.test.html`. The tests use isolated in-memory project storage.
 - `example-presets.json` contains reusable preset settings.
 - `samples/stillwater-4k-motion.mp4` is a playable 10-second H.264/AAC sample rendered from the bundled 3840 × 2160 image.
 - Open `samples/motion-preview.html` for a live motion preview of the same image and an on-demand WebM export.
