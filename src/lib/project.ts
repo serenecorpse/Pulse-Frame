@@ -1,7 +1,9 @@
 import type { Motion } from "./motion";
+import { advancedEffects } from "./advanced-visualizers.ts";
 
 export type Lane = "audio" | "video" | "image" | "visualizer" | "text";
-export type AssetType = "audio" | "video" | "image" | "lyrics" | "text";
+export type AssetType =
+  "audio" | "video" | "image" | "lyrics" | "text" | "model";
 export type Aspect = "16:9" | "9:16" | "1:1" | "4:5";
 export const lyricFonts = {
   classic: { label: "Classic sans", family: "sans-serif" },
@@ -51,10 +53,13 @@ export const beatEffects = [
   "mirror",
 ] as const;
 export type EffectType =
-  (typeof equalizerEffects)[number] | (typeof beatEffects)[number];
+  | (typeof equalizerEffects)[number]
+  | (typeof beatEffects)[number]
+  | (typeof advancedEffects)[number];
 export const allEffects: readonly EffectType[] = [
   ...equalizerEffects,
   ...beatEffects,
+  ...advancedEffects,
 ];
 export function isBeatEffect(effect: EffectType | undefined): boolean {
   return !!effect && (beatEffects as readonly string[]).includes(effect);
@@ -69,6 +74,7 @@ export interface Asset extends AssetInfo {
   url: string;
   duration: number;
   element?: HTMLImageElement | HTMLVideoElement | HTMLAudioElement;
+  modelPoints?: Float32Array;
 }
 export interface Clip {
   id: string;
@@ -90,6 +96,9 @@ export interface Clip {
   sensitivity?: number;
   stringInstrument?: StringInstrument;
   layerOrder?: number;
+  visualizerDetail?: number;
+  visualizerSpeed?: number;
+  modelAssetId?: string;
   isLyrics?: boolean;
   motion?: Motion;
 }
@@ -161,6 +170,7 @@ export function formatTime(value: number): string {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 export function classify(file: File): AssetType | null {
+  if (/\.glb$/i.test(file.name)) return "model";
   if (
     file.type.startsWith("image/") ||
     /\.(png|jpe?g|webp|gif)$/i.test(file.name)

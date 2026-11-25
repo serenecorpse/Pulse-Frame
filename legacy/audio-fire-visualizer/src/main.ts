@@ -107,10 +107,12 @@ const bloomStrengthInput =
 const sensitivityInput =
   document.querySelector<HTMLInputElement>("#sensitivity");
 
-const fireIntensityValue =
-  document.querySelector<HTMLSpanElement>("#fireIntensityValue");
-const bloomStrengthValue =
-  document.querySelector<HTMLSpanElement>("#bloomStrengthValue");
+const fireIntensityValue = document.querySelector<HTMLSpanElement>(
+  "#fireIntensityValue",
+);
+const bloomStrengthValue = document.querySelector<HTMLSpanElement>(
+  "#bloomStrengthValue",
+);
 const sensitivityValue =
   document.querySelector<HTMLSpanElement>("#sensitivityValue");
 
@@ -529,15 +531,12 @@ const MAX_PARTICLES = 500;
 const particlePositions = new Float32Array(MAX_PARTICLES * 3);
 const particleColors = new Float32Array(MAX_PARTICLES * 3);
 
-const particles: FireParticle[] = Array.from(
-  { length: MAX_PARTICLES },
-  () => ({
-    active: false,
-    life: 0,
-    maxLife: 1,
-    velocity: new THREE.Vector3(),
-  }),
-);
+const particles: FireParticle[] = Array.from({ length: MAX_PARTICLES }, () => ({
+  active: false,
+  life: 0,
+  maxLife: 1,
+  velocity: new THREE.Vector3(),
+}));
 
 const particleGeometry = new THREE.BufferGeometry();
 
@@ -578,10 +577,7 @@ function getFireColorFromPitch(normalizedPitch: number): THREE.Color {
 }
 
 function spawnExplosion(power: number, normalizedPitch: number): void {
-  const particleCount = Math.min(
-    MAX_PARTICLES,
-    Math.floor(60 + power * 190),
-  );
+  const particleCount = Math.min(MAX_PARTICLES, Math.floor(60 + power * 190));
 
   const color = getFireColorFromPitch(normalizedPitch);
   let created = 0;
@@ -679,12 +675,7 @@ function getBandEnergy(minFrequency: number, maxFrequency: number): number {
 }
 
 function detectPitch(): PitchResult {
-  if (
-    !audioContext ||
-    !analyser ||
-    !timeDomainData ||
-    !pitchDetector
-  ) {
+  if (!audioContext || !analyser || !timeDomainData || !pitchDetector) {
     return {
       frequency: null,
       normalized: 0.35,
@@ -818,7 +809,9 @@ presetSelect.addEventListener("change", () => {
   selectedPreset = presetSelect.value as PresetName;
   updatePreset();
 
-  updateStatus(`🎺 Preset changed to <em>${presetSelect.selectedOptions[0].text}</em>.`);
+  updateStatus(
+    `🎺 Preset changed to <em>${presetSelect.selectedOptions[0].text}</em>.`,
+  );
 });
 
 fireIntensityInput.addEventListener("input", () => {
@@ -860,8 +853,7 @@ function animate(): void {
 
   const low = getBandEnergy(20, 180) * preset.lowMultiplier * sensitivity;
   const mid = getBandEnergy(180, 2200) * preset.midMultiplier * sensitivity;
-  const high =
-    getBandEnergy(2200, 8500) * preset.highMultiplier * sensitivity;
+  const high = getBandEnergy(2200, 8500) * preset.highMultiplier * sensitivity;
 
   const energy = THREE.MathUtils.clamp(
     low * 0.5 + mid * 0.35 + high * 0.15,
@@ -873,10 +865,7 @@ function animate(): void {
   const energyRise = energy - previousEnergy;
 
   // A sudden loud energy jump triggers an explosion.
-  if (
-    energy > 0.25 &&
-    energyRise > preset.explosionThreshold
-  ) {
+  if (energy > 0.25 && energyRise > preset.explosionThreshold) {
     const explosionPower = Math.min(
       1.5,
       energyRise * 9 * preset.explosionMultiplier,

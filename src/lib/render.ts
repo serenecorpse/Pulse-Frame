@@ -2,6 +2,9 @@ import { silentFeatures, type AudioFeatures } from "./audio-features";
 import { activeCueAtTime, lyricCueTiming, parseLyrics } from "./lyrics";
 import { cameraAt, cameraCrop, drawCamera } from "./motion";
 import { instrumentStrings, stringDisplacement, stringLevel } from "./strings";
+import { isAdvancedEffect } from "./advanced-visualizers";
+import { drawAdvanced2D, pruneFeedback } from "./advanced-2d";
+import { drawAdvanced3D } from "./advanced-3d";
 import {
   beatEffects,
   dimensions,
@@ -434,6 +437,7 @@ function drawEqualizer(
   cx: number,
   cy: number,
   unit: number,
+  model?: Float32Array,
 ): void {
   const { width: w, height: h } = ctx.canvas,
     min = Math.min(w, h),
@@ -462,6 +466,24 @@ function drawEqualizer(
   ctx.lineJoin = "round";
   ctx.shadowColor = color;
   ctx.shadowBlur = 14 * unit;
+  if (isAdvancedEffect(effect)) {
+    const frame = {
+      width: w,
+      height: h,
+      time: time - clip.start + (clip.offset || 0),
+      audio,
+      sensitivity,
+      color,
+      unit,
+      detail: (clip.visualizerDetail ?? 100) / 100,
+      speed: (clip.visualizerSpeed ?? 100) / 100,
+      clipId: clip.id,
+    };
+    if (!drawAdvanced2D(ctx, effect, frame))
+      drawAdvanced3D(ctx, effect, frame, model);
+    ctx.restore();
+    return;
+  }
   switch (effect) {
     case "strings": {
       const instrument = clip.stringInstrument ?? "guitar";
@@ -901,6 +923,14 @@ export function renderScene(
     ctx.restore();
   }
   const effectClips = active("visualizer");
+  pruneFeedback(
+    canvas,
+    new Set(
+      effectClips
+        .filter((clip) => clip.effect === "feedback-tunnel")
+        .map((clip) => clip.id),
+    ),
+  );
   effectClips
     .filter((clip) => isBeatEffect(clip.effect))
     .sort(
@@ -919,7 +949,12 @@ export function renderScene(
       ),
     );
   for (const clip of effectClips)
-    if (!isBeatEffect(clip.effect))
+    if (!isBeatEffect(clip.effect)) {
+      const model = clip.modelAssetId
+        ? assets.find((asset) => asset.id === clip.modelAssetId)?.modelPoints
+        : undefined;
+      if (clip.effect === "audio-silhouette" && clip.modelAssetId && !model)
+        continue;
       drawEqualizer(
         ctx,
         clip,
@@ -930,7 +965,9 @@ export function renderScene(
         (clip.x / baseW) * w,
         (clip.y / baseH) * h,
         unit,
+        model,
       );
+    }
   const cues = parseLyrics(project.lyrics),
     cue = activeCueAtTime(cues, time);
   for (const clip of active("text")) {

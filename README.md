@@ -19,14 +19,18 @@ Import images, audio, video, LRC, SBV, or text files in the Media panel. Select 
 
 Choose a lyric font and display effect in the Text panel: classic, fade, rise, pop, typewriter, or neon. Effects restart for each lyric cue and are included in exports; karaoke highlighting remains available for timed lyrics. Fonts use those installed on the device with browser fallbacks, so their appearance can vary by system.
 
-Use **Layers** to select or hide clips and move footage forward or backward. The composition uses fixed stages: footage, Beat FX, equalizers, then text. Only footage can be reordered; effects cannot be moved between stages.
+Use **Layers** to select or hide clips and move footage forward or backward. The composition uses fixed stages: footage, Beat FX, equalizers and visualizers, then text. Only footage can be reordered; effects cannot be moved between stages.
 
 Drag clips on the timeline to move them, or drag their edge handles to trim them. Overlapping clips occupy separate rows. Click the ruler to seek. Snap aligns clip edges with the playhead and other clips; turn it off with **Snap** or hold Alt while dragging. Lyrics clips cannot be trimmed, split, or duplicated. Drag the selected layer's preview handle to reposition it; it snaps to the canvas center when snapping is enabled. Undo restores a completed drag.
 
-The Effects panel has two groups of audio-reactive layers, placed at the playhead:
+The Effects panel has three groups of audio-reactive layers, placed at the playhead:
 
 - **Equalizers** are drawn over the footage: Spectrum, Mirror bars, Radial bars, Circular, Waveform, Neon, Particles, Pulse, and Strings. Color, sensitivity, position, scale, and rotation are editable.
 - **Beat FX** transform the image and video beneath them: Beat zoom, Shake, Glitch, RGB split, Hue shift, Color flash, Strobe, Duotone, Invert flash, VHS, Bloom, Vignette pulse, and Mirror. Equalizers and lyrics are drawn afterwards and stay unaffected. Position sets the focal point for Beat zoom and Vignette pulse.
+
+The **Visualizers** group adds Plasma Orb, Particle Swarm, Wireframe Terrain, Liquid Ink, Kaleidoscope, Ribbon Tunnel, Polygon Shatter, Feedback Tunnel, Topographic Contours, and Audio Silhouette. Select a layer to adjust its color, sensitivity, motion speed, and effect-specific detail, in addition to the usual position, size, rotation, and opacity. The 3D and ink visualizers require WebGL 2. Feedback incorporates the footage and effects beneath it; its frame history resets on a seek, playback jump, or new export.
+
+Audio Silhouette includes a built-in figure. To use a custom shape, import a self-contained `.glb` 2.0 model (maximum 25 MB) in Media and select it in the layer's Inspector. The static mesh surface is sampled into particles; model textures, skeletal animations, external resources, and compressed meshes requiring external decoders are not supported. Re-import the model after reloading or opening the project, just like other media.
 
 Beats are detected from bass energy in the playing audio, so beat effects are mostly idle while paused or silent. Strobe and Invert flash fire on alternate beats to limit flash frequency, but they may still affect photosensitive viewers. Image and video clips also have a **beat pulse** animation.
 

@@ -45,6 +45,12 @@ import {
 } from "@/lib/project";
 import { renderScene } from "@/lib/render";
 import { BeatTracker } from "@/lib/audio-features";
+import {
+  advancedEffects,
+  isAdvancedEffect,
+  type AdvancedEffect,
+} from "@/lib/advanced-visualizers";
+import { disposeAdvanced3D, loadModelPoints } from "@/lib/advanced-3d";
 import { editClipTiming, layoutLane, snapDelta } from "@/lib/timeline";
 import { verifyVideo } from "@/lib/video";
 import { extractAudio } from "@/lib/extract-audio";
@@ -60,6 +66,18 @@ const panels: { id: Panel; label: string; icon: string }[] = [
   { id: "motion", label: "Motion", icon: "◉" },
   { id: "upscale", label: "Upscale", icon: "⇧" },
 ];
+const visualizerDetailLabels: Record<AdvancedEffect, string> = {
+  "plasma-orb": "Surface detail",
+  "particle-swarm": "Particle density",
+  "wireframe-terrain": "Terrain height",
+  "liquid-ink": "Turbulence",
+  kaleidoscope: "Mirror segments",
+  "ribbon-tunnel": "Ribbon count",
+  "polygon-shatter": "Scatter strength",
+  "feedback-tunnel": "Trail strength",
+  "topographic-contours": "Contour density",
+  "audio-silhouette": "Particle density",
+};
 const presets: MotionPreset[] = [
   "ken-burns",
   "pan-left",
@@ -123,6 +141,56 @@ const effectInfo: Record<
     description:
       "Vibrating instrument strings driven by the music's frequencies",
     color: "#ffffff",
+  },
+  "plasma-orb": {
+    icon: "◉",
+    description: "A glowing, audio-distorted plasma sphere",
+    color: "#b47cff",
+  },
+  "particle-swarm": {
+    icon: "✧",
+    description: "A spiral galaxy of audio-reactive particles",
+    color: "#73d9ff",
+  },
+  "wireframe-terrain": {
+    icon: "⌁",
+    description: "A moving landscape that rises with the bass",
+    color: "#ff81dc",
+  },
+  "liquid-ink": {
+    icon: "◒",
+    description: "Flowing ink distorted by the music",
+    color: "#dc71ff",
+  },
+  kaleidoscope: {
+    icon: "✺",
+    description: "Mirrored geometric patterns that rotate with the music",
+    color: "#f3a5ff",
+  },
+  "ribbon-tunnel": {
+    icon: "◎",
+    description: "Glowing curved ribbons form a reactive tunnel",
+    color: "#79b6ff",
+  },
+  "polygon-shatter": {
+    icon: "◇",
+    description: "A faceted sphere scatters and reforms on beats",
+    color: "#ff9bcc",
+  },
+  "feedback-tunnel": {
+    icon: "▣",
+    description: "Previous frames form an expanding feedback tunnel",
+    color: "#b4a1ff",
+  },
+  "topographic-contours": {
+    icon: "≋",
+    description: "Animated elevation contours respond to the music",
+    color: "#83dacc",
+  },
+  "audio-silhouette": {
+    icon: "♟",
+    description: "A particle silhouette scatters with the music",
+    color: "#8ed9ff",
   },
   "beat-zoom": {
     icon: "⤢",
@@ -227,7 +295,7 @@ function readProject(value: unknown): Project {
     if (
       typeof asset.id !== "string" ||
       typeof asset.name !== "string" ||
-      !["audio", "video", "image", "lyrics", "text"].includes(
+      !["audio", "video", "image", "lyrics", "text", "model"].includes(
         String(asset.type),
       )
     )
@@ -288,6 +356,18 @@ function readProject(value: unknown): Project {
         Number.isFinite(saved.layerOrder)
           ? saved.layerOrder
           : undefined,
+      visualizerDetail:
+        typeof saved.visualizerDetail === "number" &&
+        Number.isFinite(saved.visualizerDetail)
+          ? Math.max(30, Math.min(150, saved.visualizerDetail))
+          : undefined,
+      visualizerSpeed:
+        typeof saved.visualizerSpeed === "number" &&
+        Number.isFinite(saved.visualizerSpeed)
+          ? Math.max(20, Math.min(200, saved.visualizerSpeed))
+          : undefined,
+      modelAssetId:
+        typeof saved.modelAssetId === "string" ? saved.modelAssetId : undefined,
       stringInstrument: stringInstruments.includes(
         saved.stringInstrument as StringInstrument,
       )
@@ -329,6 +409,18 @@ function readProject(value: unknown): Project {
             throw new Error(`Invalid ${key} keyframes on ${clip.name}.`);
           return { t: point.t, v: point.v };
         });
+        for (const clip of clips) {
+          if (
+            clip.modelAssetId &&
+            !assets.some(
+              (asset) =>
+                asset.id === clip.modelAssetId && asset.type === "model",
+            )
+          )
+            throw new Error(
+              `The model for ${clip.name} is missing from this project.`,
+            );
+        }
       }
       if (
         [
@@ -423,6 +515,8 @@ async function loadAsset(file: File, id: string): Promise<Asset> {
         throw new Error("The browser could not read the media duration.");
       asset.element = element;
       asset.duration = element.duration;
+    } else if (type === "model") {
+      asset.modelPoints = await loadModelPoints(file);
     }
     return asset;
   } catch (error) {
@@ -611,6 +705,7 @@ export default function Editor() {
       extractionRef.current?.abort();
       cancelExportRef.current?.();
       void audioContext.current?.close();
+      disposeAdvanced3D();
     };
   }, [notify]);
   useEffect(() => {
@@ -730,6 +825,8 @@ export default function Editor() {
     const canvas = canvasRef.current;
     if (!canvas || !ready || exporting) return;
     let previous = performance.now();
+    let failedProject: Project | undefined;
+    let failedAssets: Asset[] | undefined;
     const draw = (now: number) => {
       if (playingRef.current) {
         timeRef.current += (now - previous) / 1000;
@@ -760,22 +857,30 @@ export default function Editor() {
         audioContext.current?.sampleRate ?? 48000,
         elapsed,
       );
-      try {
-        renderScene(
-          canvas,
-          projectRef.current,
-          assetsRef.current,
-          timeRef.current,
-          features,
-          waveform,
-        );
-      } catch (error) {
-        playingRef.current = false;
-        setPlaying(false);
-        notify(
-          `Preview failed: ${error instanceof Error ? error.message : "rendering error"}`,
-        );
-        return;
+      if (
+        projectRef.current !== failedProject ||
+        assetsRef.current !== failedAssets
+      ) {
+        try {
+          renderScene(
+            canvas,
+            projectRef.current,
+            assetsRef.current,
+            timeRef.current,
+            features,
+            waveform,
+          );
+          failedProject = undefined;
+          failedAssets = undefined;
+        } catch (error) {
+          failedProject = projectRef.current;
+          failedAssets = assetsRef.current;
+          playingRef.current = false;
+          setPlaying(false);
+          notify(
+            `Preview failed: ${error instanceof Error ? error.message : "rendering error"}`,
+          );
+        }
       }
       frameRef.current = requestAnimationFrame(draw);
     };
@@ -855,7 +960,10 @@ export default function Editor() {
                 ],
           };
           setPanel("text");
-        } else if (!p.clips.some((item) => item.assetId === asset.id)) {
+        } else if (
+          type !== "model" &&
+          !p.clips.some((item) => item.assetId === asset.id)
+        ) {
           next.clips = [...p.clips, makeClip(asset, p.aspect)];
         }
         update(next);
@@ -884,7 +992,13 @@ export default function Editor() {
     update({
       ...projectRef.current,
       assets: projectRef.current.assets.filter((item) => item.id !== id),
-      clips: projectRef.current.clips.filter((item) => item.assetId !== id),
+      clips: projectRef.current.clips
+        .filter((item) => item.assetId !== id)
+        .map((item) =>
+          item.modelAssetId === id
+            ? { ...item, modelAssetId: undefined }
+            : item,
+        ),
     });
     setSelected(null);
   };
@@ -1236,8 +1350,13 @@ export default function Editor() {
     const mimeType = format.mime;
     const missing = projectRef.current.clips.some(
       (item) =>
-        item.assetId &&
-        !assetsRef.current.some((asset) => asset.id === item.assetId),
+        (item.assetId &&
+          !assetsRef.current.some((asset) => asset.id === item.assetId)) ||
+        (item.effect === "audio-silhouette" &&
+          item.modelAssetId &&
+          !assetsRef.current.some(
+            (asset) => asset.id === item.modelAssetId && asset.modelPoints,
+          )),
     );
     if (missing) {
       notify("Re-import the missing project media before exporting.");
@@ -1489,10 +1608,10 @@ export default function Editor() {
                   <span>
                     or <u>browse to upload</u>
                   </span>
-                  <small>Audio, video, images &amp; lyrics</small>
+                  <small>Audio, video, images, lyrics &amp; GLB models</small>
                 </button>
                 <div className="media-filters">
-                  {["all", "audio", "video", "image"].map((item) => (
+                  {["all", "audio", "video", "image", "model"].map((item) => (
                     <button
                       key={item}
                       className={`filter-chip ${filter === item ? "active" : ""}`}
@@ -1715,6 +1834,11 @@ export default function Editor() {
                   [
                     ["EQUALIZERS", "Drawn over your footage", equalizerEffects],
                     [
+                      "VISUALIZERS",
+                      "Immersive audio-reactive layers",
+                      advancedEffects,
+                    ],
+                    [
                       "BEAT FX",
                       "Transform the image and video beneath",
                       beatEffects,
@@ -1733,7 +1857,14 @@ export default function Editor() {
                           title={effectInfo[effect].description}
                           onClick={() => addEffect(effect)}
                         >
-                          <span className="effect-preview" aria-hidden="true">
+                          <span
+                            className="effect-preview"
+                            aria-hidden="true"
+                            style={{
+                              color: effectInfo[effect].color,
+                              background: `radial-gradient(ellipse at center, ${effectInfo[effect].color}30, transparent 70%)`,
+                            }}
+                          >
                             {effectInfo[effect].icon}
                           </span>
                           {pretty(effect)}
@@ -2836,6 +2967,72 @@ export default function Editor() {
                       </select>
                     </label>
                   )}
+                  {clip.effect === "audio-silhouette" && (
+                    <label>
+                      Silhouette model
+                      <select
+                        className="inspector-select"
+                        value={clip.modelAssetId ?? ""}
+                        onChange={(event) =>
+                          updateClip(clip.id, {
+                            modelAssetId: event.target.value || undefined,
+                          })
+                        }
+                      >
+                        <option value="">Built-in silhouette</option>
+                        {project.assets
+                          .filter((asset) => asset.type === "model")
+                          .map((asset) => (
+                            <option key={asset.id} value={asset.id}>
+                              {asset.name}
+                              {assets.some((loaded) => loaded.id === asset.id)
+                                ? ""
+                                : " (re-import required)"}
+                            </option>
+                          ))}
+                      </select>
+                      <small>
+                        Import a GLB model in Media to use a custom shape.
+                      </small>
+                    </label>
+                  )}
+                  {isAdvancedEffect(clip.effect) && (
+                    <>
+                      <label className="slider-label">
+                        <span>
+                          Motion speed <b>{clip.visualizerSpeed ?? 100}%</b>
+                        </span>
+                        <input
+                          type="range"
+                          min="20"
+                          max="200"
+                          value={clip.visualizerSpeed ?? 100}
+                          onChange={(event) =>
+                            updateClip(clip.id, {
+                              visualizerSpeed: Number(event.target.value),
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="slider-label">
+                        <span>
+                          {visualizerDetailLabels[clip.effect]}{" "}
+                          <b>{clip.visualizerDetail ?? 100}%</b>
+                        </span>
+                        <input
+                          type="range"
+                          min="30"
+                          max="150"
+                          value={clip.visualizerDetail ?? 100}
+                          onChange={(event) =>
+                            updateClip(clip.id, {
+                              visualizerDetail: Number(event.target.value),
+                            })
+                          }
+                        />
+                      </label>
+                    </>
+                  )}
                   <label>
                     {clip.effect === "strings" ? "String tint" : "Effect color"}{" "}
                     <input
@@ -2877,7 +3074,7 @@ export default function Editor() {
         type="file"
         hidden
         multiple
-        accept="audio/*,video/*,image/*,.lrc,.sbv,.txt"
+        accept="audio/*,video/*,image/*,.lrc,.sbv,.txt,.glb"
         onChange={(event) => {
           if (event.target.files) void importFiles(event.target.files);
           event.target.value = "";

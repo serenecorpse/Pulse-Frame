@@ -480,6 +480,467 @@ test("lyric font and typewriter effect render, persist, and export", async ({
   expect(count).toBeGreaterThan(100);
 });
 
+test("all immersive visualizers render and can be removed", async ({
+  page,
+}) => {
+  test.setTimeout(120000);
+  await page.goto("/");
+  await page.evaluate(() => {
+    const state = window as typeof window & { testSpectrum: boolean };
+    state.testSpectrum = false;
+    AnalyserNode.prototype.getByteFrequencyData = function (data) {
+      data.fill(0);
+      if (state.testSpectrum) {
+        data.fill(240, 1, 7);
+        data.fill(180, 7, 85);
+        data.fill(200, 85, 400);
+      }
+    };
+  });
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await page.getByRole("button", { name: "✳ Effects" }).click();
+  const pixels = () =>
+    page.evaluate(() => {
+      const canvas = document.querySelector<HTMLCanvasElement>(
+        ".preview-stage canvas",
+      )!;
+      const { data } = canvas
+        .getContext("2d")!
+        .getImageData(400, 120, 480, 480);
+      const samples: number[] = [];
+      for (let y = 0; y < 480; y += 3)
+        for (let x = 0; x < 480; x += 3) {
+          const index = (y * 480 + x) * 4;
+          samples.push(data[index], data[index + 1], data[index + 2]);
+        }
+      return samples;
+    });
+  const baseline = await pixels();
+  const difference = async () => {
+    const current = await pixels();
+    let changed = 0;
+    for (let i = 0; i < current.length; i += 3)
+      if (
+        Math.abs(current[i] - baseline[i]) +
+          Math.abs(current[i + 1] - baseline[i + 1]) +
+          Math.abs(current[i + 2] - baseline[i + 2]) >
+        25
+      )
+        changed++;
+    return changed;
+  };
+  for (const effect of [
+    "Plasma Orb",
+    "Particle Swarm",
+    "Wireframe Terrain",
+    "Liquid Ink",
+    "Kaleidoscope",
+    "Ribbon Tunnel",
+    "Polygon Shatter",
+    "Feedback Tunnel",
+    "Topographic Contours",
+    "Audio Silhouette",
+  ]) {
+    await page.getByRole("button", { name: effect, exact: true }).click();
+    await expect(
+      page.getByText("Preview failed", { exact: false }),
+    ).toHaveCount(0);
+    await expect
+      .poll(difference, {
+        message: `${effect} should visibly render`,
+        timeout: 10000,
+      })
+      .toBeGreaterThan(20);
+    await page.waitForTimeout(600);
+    const idle = await pixels();
+    await page.evaluate(() => {
+      (window as typeof window & { testSpectrum: boolean }).testSpectrum = true;
+    });
+    await expect
+      .poll(
+        async () => {
+          const current = await pixels();
+          let changed = 0;
+          for (let i = 0; i < current.length; i += 3)
+            if (
+              Math.abs(current[i] - idle[i]) +
+                Math.abs(current[i + 1] - idle[i + 1]) +
+                Math.abs(current[i + 2] - idle[i + 2]) >
+              25
+            )
+              changed++;
+          return changed;
+        },
+        { message: `${effect} should respond to audio`, timeout: 5000 },
+      )
+      .toBeGreaterThan(20);
+    await page.evaluate(() => {
+      (window as typeof window & { testSpectrum: boolean }).testSpectrum =
+        false;
+    });
+    await page.getByRole("button", { name: "Delete selected clip" }).click();
+    await expect.poll(difference).toBe(0);
+  }
+});
+
+function triangleGlb(external = false): Buffer {
+  const vertices = Buffer.alloc(36);
+  [-1, -1, 0, 1, -1, 0, 0, 1, 0].forEach((value, i) =>
+    vertices.writeFloatLE(value, i * 4),
+  );
+  const json = Buffer.from(
+    JSON.stringify({
+      asset: { version: "2.0" },
+      buffers: [
+        {
+          byteLength: vertices.length,
+          ...(external ? { uri: "https://example.com/model.bin" } : {}),
+        },
+      ],
+      bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: vertices.length }],
+      accessors: [
+        {
+          bufferView: 0,
+          componentType: 5126,
+          count: 3,
+          type: "VEC3",
+          min: [-1, -1, 0],
+          max: [1, 1, 0],
+        },
+      ],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+      nodes: [{ mesh: 0 }],
+      scenes: [{ nodes: [0] }],
+      scene: 0,
+    }),
+  );
+  const padded = Buffer.alloc(Math.ceil(json.length / 4) * 4, 0x20);
+  json.copy(padded);
+  const result = Buffer.alloc(12 + 8 + padded.length + 8 + vertices.length);
+  result.writeUInt32LE(0x46546c67, 0);
+  result.writeUInt32LE(2, 4);
+  result.writeUInt32LE(result.length, 8);
+  result.writeUInt32LE(padded.length, 12);
+  result.writeUInt32LE(0x4e4f534a, 16);
+  padded.copy(result, 20);
+  const offset = 20 + padded.length;
+  result.writeUInt32LE(vertices.length, offset);
+  result.writeUInt32LE(0x004e4942, offset + 4);
+  vertices.copy(result, offset + 8);
+  return result;
+}
+
+test("custom silhouette models survive project reload and require re-import", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const file = {
+    name: "triangle.glb",
+    mimeType: "model/gltf-binary",
+    buffer: triangleGlb(),
+  };
+  await page.locator('input[accept^="audio/"]').setInputFiles(file);
+  await expect(page.getByText("1 assets in this session")).toBeVisible();
+  await page.getByRole("button", { name: "✳ Effects" }).click();
+  await page
+    .getByRole("button", { name: "Audio Silhouette", exact: true })
+    .click();
+  const image = () =>
+    page.evaluate(() => {
+      const canvas = document.querySelector<HTMLCanvasElement>(
+        ".preview-stage canvas",
+      )!;
+      const pixels = canvas
+        .getContext("2d")!
+        .getImageData(400, 120, 480, 480).data;
+      const values: number[] = [];
+      for (let i = 0; i < pixels.length; i += 16)
+        values.push(pixels[i], pixels[i + 1], pixels[i + 2]);
+      return values;
+    });
+  await expect
+    .poll(async () => (await image()).filter((value) => value > 100).length)
+    .toBeGreaterThan(100);
+  const builtIn = await image();
+  const [modelId] = await page
+    .getByLabel("Silhouette model")
+    .selectOption({ label: "triangle.glb" });
+  const changedPixels = async (baseline: number[]) => {
+    const current = await image();
+    return current.reduce(
+      (sum, value, index) =>
+        sum + (Math.abs(value - baseline[index]) > 15 ? 1 : 0),
+      0,
+    );
+  };
+  await expect.poll(() => changedPixels(builtIn)).toBeGreaterThan(100);
+  const custom = await image();
+  await page.getByLabel("Motion speed").fill("140");
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const saved = JSON.parse(
+          localStorage.getItem("pulseframe-project") || "{}",
+        );
+        const clip = saved.clips?.find(
+          (item: { effect?: string }) => item.effect === "audio-silhouette",
+        );
+        return [clip?.modelAssetId, clip?.visualizerSpeed];
+      }),
+    )
+    .toEqual([modelId, 140]);
+  await page.reload();
+  await page.locator(".clip-visualizer").click();
+  await expect(
+    page.getByText("RE-IMPORT REQUIRED", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Silhouette model")).toContainText(
+    "triangle.glb (re-import required)",
+  );
+  await page.getByRole("button", { name: "↗ Export video" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Start export" })
+    .click();
+  await expect(
+    page.getByText("Re-import the missing project media before exporting."),
+  ).toBeVisible();
+  await page.locator('input[accept^="audio/"]').setInputFiles(file);
+  await expect(
+    page.getByText("RE-IMPORT REQUIRED", { exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByLabel("Silhouette model")).toHaveValue(modelId);
+  await expect.poll(() => changedPixels(custom)).toBe(0);
+});
+
+test("models with external resources are rejected", async ({ page }) => {
+  await page.goto("/");
+  await page.locator('input[accept^="audio/"]').setInputFiles({
+    name: "external.glb",
+    mimeType: "model/gltf-binary",
+    buffer: triangleGlb(true),
+  });
+  await expect(
+    page.getByText("GLB models must embed all resources.", { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByText("0 assets in this session")).toBeVisible();
+});
+
+test("the preview recovers after an unsupported WebGL visualizer is removed", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = HTMLCanvasElement.prototype.getContext;
+    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+      value: function (
+        this: HTMLCanvasElement,
+        type: string,
+        ...args: unknown[]
+      ) {
+        return type === "webgl2"
+          ? null
+          : Reflect.apply(original, this, [type, ...args]);
+      },
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "✳ Effects" }).click();
+  await page.getByRole("button", { name: "Plasma Orb", exact: true }).click();
+  await expect(
+    page.getByText("Preview failed:", { exact: false }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Delete selected clip" }).click();
+  await page.getByRole("button", { name: "Kaleidoscope", exact: true }).click();
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const canvas = document.querySelector<HTMLCanvasElement>(
+          ".preview-stage canvas",
+        )!;
+        const pixels = canvas
+          .getContext("2d")!
+          .getImageData(400, 120, 480, 480).data;
+        let bright = 0;
+        for (let i = 0; i < pixels.length; i += 4)
+          if (pixels[i] > 80 && pixels[i + 2] > 80) bright++;
+        return bright;
+      }),
+    )
+    .toBeGreaterThan(100);
+});
+
+test("feedback history is cleared when seeking backwards", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "✳ Effects" }).click();
+  await page
+    .getByRole("button", { name: "Feedback Tunnel", exact: true })
+    .click();
+  const ruler = page.locator(".timeline-ruler");
+  await ruler.click({ position: { x: 32, y: 5 } });
+  const snapshot = () =>
+    page.evaluate(async () => {
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      const canvas = document.querySelector<HTMLCanvasElement>(
+        ".preview-stage canvas",
+      )!;
+      const pixels = canvas
+        .getContext("2d")!
+        .getImageData(400, 120, 480, 480).data;
+      const result: number[] = [];
+      for (let i = 0; i < pixels.length; i += 32)
+        result.push(pixels[i], pixels[i + 1], pixels[i + 2]);
+      return result;
+    });
+  const initial = await snapshot();
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await page.waitForTimeout(600);
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await ruler.click({ position: { x: 32, y: 5 } });
+  await expect.poll(snapshot).toEqual(initial);
+});
+
+test("3D, 2D, feedback and custom model visualizers appear in exports", async ({
+  page,
+}) => {
+  test.setTimeout(80000);
+  await page.goto("/");
+  const clips = [
+    ["plasma-orb", "#ff0000", 0],
+    ["kaleidoscope", "#00ff00", 2],
+    ["feedback-tunnel", "#00ffff", 4],
+    ["audio-silhouette", "#0000ff", 6],
+  ].map(([effect, color, start], index) => ({
+    id: `effect-${index}`,
+    name: String(effect),
+    lane: "visualizer",
+    start,
+    duration: 2,
+    x: 640,
+    y: 360,
+    scale: 100,
+    rotation: 0,
+    opacity: 100,
+    visible: true,
+    animation: "none",
+    effect,
+    color,
+    ...(effect === "audio-silhouette" ? { modelAssetId: "model" } : {}),
+  }));
+  const project = {
+    name: "Visualizers",
+    aspect: "16:9",
+    assets: [
+      {
+        id: "model",
+        name: "triangle.glb",
+        type: "model",
+        size: triangleGlb().length,
+      },
+    ],
+    clips,
+  };
+  await page.locator('input[accept=".json,application/json"]').setInputFiles({
+    name: "project.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(project)),
+  });
+  await page.locator('input[accept^="audio/"]').setInputFiles({
+    name: "triangle.glb",
+    mimeType: "model/gltf-binary",
+    buffer: triangleGlb(),
+  });
+  await expect(page.getByText("1 assets in this session")).toBeVisible();
+  await page.getByRole("button", { name: "↗ Export video" }).click();
+  const dialog = page.getByRole("dialog", { name: "Export your video" });
+  await dialog.getByLabel("Resolution").selectOption("720");
+  const download = page.waitForEvent("download", { timeout: 50000 });
+  await dialog.getByRole("button", { name: "Start export" }).click();
+  const file = await download;
+  const bytes = await readFile(await file.path());
+  const counts = await page.evaluate(
+    async ({ base64, type }) => {
+      const data = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([data], { type }));
+      try {
+        const video = document.createElement("video");
+        video.src = url;
+        await new Promise<void>((resolve, reject) => {
+          video.onloadeddata = () => resolve();
+          video.onerror = () => reject(new Error("Cannot decode export"));
+        });
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d")!;
+        const counts: number[] = [];
+        for (const [index, time] of [1, 3, 5, 7].entries()) {
+          video.currentTime = time;
+          await new Promise<void>((resolve, reject) => {
+            video.onseeked = () => resolve();
+            video.onerror = () => reject(new Error("Cannot seek export"));
+          });
+          ctx.drawImage(video, 0, 0);
+          const pixels = ctx.getImageData(400, 120, 480, 480).data;
+          let count = 0;
+          for (let i = 0; i < pixels.length; i += 4) {
+            const [red, green, blue] = [
+              pixels[i],
+              pixels[i + 1],
+              pixels[i + 2],
+            ];
+            if (
+              index === 0 &&
+              red > 70 &&
+              red > green * 1.5 &&
+              red > blue * 1.4
+            )
+              count++;
+            if (
+              index === 1 &&
+              green > 70 &&
+              green > red * 1.5 &&
+              green > blue * 1.5
+            )
+              count++;
+            if (
+              index === 2 &&
+              green > 55 &&
+              blue > 55 &&
+              green > red * 1.5 &&
+              blue > red * 1.5
+            )
+              count++;
+            if (
+              index === 3 &&
+              blue > 70 &&
+              blue > red * 1.5 &&
+              blue > green * 1.5
+            )
+              count++;
+          }
+          counts.push(count);
+        }
+        return counts;
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    },
+    {
+      base64: bytes.toString("base64"),
+      type: file.suggestedFilename().endsWith(".mp4")
+        ? "video/mp4"
+        : "video/webm",
+    },
+  );
+  expect(counts[0], `Plasma orb pixels: ${counts}`).toBeGreaterThan(30);
+  expect(counts[1], `Kaleidoscope pixels: ${counts}`).toBeGreaterThan(30);
+  expect(counts[2], `Feedback pixels: ${counts}`).toBeGreaterThan(30);
+  expect(counts[3], `Silhouette pixels: ${counts}`).toBeGreaterThan(30);
+});
+
 test("string visualizer reacts to audio and retains its instrument after reload", async ({
   page,
 }) => {
