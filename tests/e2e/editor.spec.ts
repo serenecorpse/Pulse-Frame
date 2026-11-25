@@ -147,6 +147,157 @@ test("the sidebar and inspector remain usable on a narrow screen", async ({
   await expect(page.getByText("VISUALIZER LAYER")).toBeVisible();
 });
 
+test("footage layers can be reordered, hidden, and positioned directly on the preview", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const image = async (color: string) =>
+    Buffer.from(
+      await page.evaluate((color) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 64;
+        canvas.height = 36;
+        const ctx = canvas.getContext("2d")!;
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL("image/png").split(",")[1];
+      }, color),
+      "base64",
+    );
+  await page.locator('input[accept^="audio/"]').setInputFiles([
+    { name: "red.png", mimeType: "image/png", buffer: await image("#ff0000") },
+    { name: "blue.png", mimeType: "image/png", buffer: await image("#0000ff") },
+  ]);
+  await expect(page.getByText("2 assets in this session")).toBeVisible();
+  await expect(
+    page.locator(".track-row").filter({ hasText: "Image" }),
+  ).toHaveCount(2);
+  const colorAtCenter = () =>
+    page.evaluate(() => {
+      const canvas = document.querySelector<HTMLCanvasElement>(
+        ".preview-stage canvas",
+      )!;
+      return Array.from(
+        canvas.getContext("2d")!.getImageData(640, 360, 1, 1).data,
+      ).slice(0, 3);
+    });
+  await expect.poll(colorAtCenter).toEqual([0, 0, 255]);
+  await page.getByRole("button", { name: "▤ Layers" }).click();
+  await page.getByRole("button", { name: "Move red.png forward" }).click();
+  await expect.poll(colorAtCenter).toEqual([255, 0, 0]);
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          JSON.parse(
+            localStorage.getItem("pulseframe-project") || "{}",
+          ).clips?.find((clip: { name: string }) => clip.name === "red.png")
+            ?.layerOrder,
+      ),
+    )
+    .toBe(1);
+  await page.getByRole("button", { name: "Hide red.png" }).click();
+  await expect.poll(colorAtCenter).toEqual([0, 0, 255]);
+  await page.getByRole("button", { name: "Show red.png" }).click();
+  await page.getByRole("button", { name: /red.png 00:00/ }).click();
+  const handle = page.getByRole("button", { name: "Move red.png on canvas" });
+  const bounds = await handle.boundingBox();
+  if (!bounds) throw new Error("Missing preview position handle");
+  const before = Number(await page.getByLabel("Position X").inputValue());
+  await page.mouse.move(
+    bounds.x + bounds.width / 2,
+    bounds.y + bounds.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    bounds.x + bounds.width / 2 + 50,
+    bounds.y + bounds.height / 2,
+    { steps: 4 },
+  );
+  await page.mouse.up();
+  await expect
+    .poll(async () => Number(await page.getByLabel("Position X").inputValue()))
+    .toBeGreaterThan(before);
+  await page.getByRole("button", { name: "↶ Undo" }).click();
+  await expect(page.getByLabel("Position X")).toHaveValue(String(before));
+  await expect
+    .poll(async () =>
+      page.evaluate(() =>
+        JSON.parse(
+          localStorage.getItem("pulseframe-project") || "{}",
+        ).clips?.find((clip: { name: string }) => clip.name === "red.png"),
+      ),
+    )
+    .toMatchObject({ x: before, visible: true, layerOrder: 1 });
+  await page.reload();
+  await page.locator('input[accept^="audio/"]').setInputFiles([
+    { name: "red.png", mimeType: "image/png", buffer: await image("#ff0000") },
+    { name: "blue.png", mimeType: "image/png", buffer: await image("#0000ff") },
+  ]);
+  await expect(page.getByText("2 assets in this session")).toBeVisible();
+  await expect.poll(colorAtCenter).toEqual([255, 0, 0]);
+});
+
+test("timeline trim handles preserve media offsets and undo", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const project = {
+    name: "Trim",
+    aspect: "16:9",
+    assets: [{ id: "video", name: "clip.mp4", type: "video", size: 1 }],
+    clips: [
+      {
+        id: "clip",
+        assetId: "video",
+        name: "clip.mp4",
+        lane: "video",
+        start: 0,
+        duration: 10,
+        offset: 2,
+        x: 640,
+        y: 360,
+        scale: 100,
+        rotation: 0,
+        opacity: 100,
+        visible: true,
+        animation: "none",
+      },
+    ],
+  };
+  await page.locator('input[accept=".json,application/json"]').setInputFiles({
+    name: "project.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(project)),
+  });
+  await page.getByRole("button", { name: "⌁ Snap" }).click();
+  const handle = page.locator(".clip-video .trim-start");
+  const rect = await handle.boundingBox();
+  if (!rect) throw new Error("Missing trim handle");
+  await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    rect.x + rect.width / 2 + 16,
+    rect.y + rect.height / 2,
+    { steps: 4 },
+  );
+  await page.mouse.up();
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          JSON.parse(localStorage.getItem("pulseframe-project") || "{}")
+            .clips?.[0]?.offset,
+      ),
+    )
+    .toBeCloseTo(4, 1);
+  await expect(page.getByLabel("Start")).toHaveValue("2");
+  await expect(page.getByLabel("Duration")).toHaveValue("8");
+  await page.getByRole("button", { name: "↶ Undo" }).click();
+  await expect(page.getByLabel("Start")).toHaveValue("0");
+  await expect(page.getByLabel("Duration")).toHaveValue("10");
+});
+
 function kickTrack(seconds = 4, rate = 48000): Buffer {
   const samples = seconds * rate,
     buffer = Buffer.alloc(44 + samples * 2);
@@ -176,6 +327,158 @@ function kickTrack(seconds = 4, rate = 48000): Buffer {
   }
   return buffer;
 }
+
+test("lyric font and typewriter effect render, persist, and export", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const project = {
+    name: "Lyrics",
+    aspect: "16:9",
+    assets: [],
+    lyrics: "[00:00.00]PULSE FRAME",
+    lyricColor: "#ff0000",
+    karaoke: false,
+    clips: [
+      {
+        id: "lyrics",
+        name: "Lyrics",
+        lane: "text",
+        start: 0,
+        duration: 10,
+        x: 640,
+        y: 360,
+        scale: 150,
+        rotation: 0,
+        opacity: 100,
+        visible: true,
+        animation: "none",
+        isLyrics: true,
+      },
+    ],
+  };
+  await page.locator('input[accept=".json,application/json"]').setInputFiles({
+    name: "lyrics.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(project)),
+  });
+  await page.getByRole("button", { name: "T Text" }).click();
+  await expect(page.getByLabel("Lyric font")).toHaveValue("classic");
+  await expect(page.getByLabel("Lyric effect")).toHaveValue("classic");
+  const redPixels = () =>
+    page.evaluate(() => {
+      const canvas = document.querySelector<HTMLCanvasElement>(
+        ".preview-stage canvas",
+      )!;
+      const pixels = canvas
+        .getContext("2d")!
+        .getImageData(200, 275, 880, 170).data;
+      let count = 0,
+        positionSum = 0;
+      for (let i = 0; i < pixels.length; i += 4) {
+        if (pixels[i] > 150 && pixels[i] > pixels[i + 1] * 2) {
+          count++;
+          positionSum += i;
+        }
+      }
+      return { count, positionSum };
+    });
+  await expect.poll(async () => (await redPixels()).count).toBeGreaterThan(100);
+  const classic = await redPixels();
+  await page.getByLabel("Lyric font").selectOption("mono");
+  await expect
+    .poll(async () => (await redPixels()).positionSum)
+    .not.toBe(classic.positionSum);
+  const mono = await redPixels();
+  await page.getByLabel("Lyric effect").selectOption("neon");
+  await expect
+    .poll(async () => (await redPixels()).positionSum)
+    .not.toBe(mono.positionSum);
+  for (const effect of ["fade", "rise", "pop", "typewriter"]) {
+    await page.getByLabel("Lyric effect").selectOption("classic");
+    await expect.poll(async () => (await redPixels()).count).toBe(mono.count);
+    await page.getByLabel("Lyric effect").selectOption(effect);
+    await expect.poll(async () => (await redPixels()).count).toBe(0);
+  }
+  const ruler = page.locator(".timeline-ruler");
+  await ruler.click({ position: { x: 2, y: 5 } });
+  await expect.poll(async () => (await redPixels()).count).toBeGreaterThan(100);
+  expect((await redPixels()).count).toBeLessThan(mono.count);
+  for (const effect of ["fade", "rise", "pop"]) {
+    await page.getByLabel("Lyric effect").selectOption(effect);
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    const pixels = await redPixels();
+    expect(pixels.count).toBeGreaterThan(0);
+    expect(pixels.positionSum).not.toBe(mono.positionSum);
+  }
+  await page.getByLabel("Lyric effect").selectOption("typewriter");
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const saved = JSON.parse(
+          localStorage.getItem("pulseframe-project") || "{}",
+        );
+        return [saved.lyricFont, saved.lyricEffect];
+      }),
+    )
+    .toEqual(["mono", "typewriter"]);
+  await page.reload();
+  await page.getByRole("button", { name: "T Text" }).click();
+  await expect(page.getByLabel("Lyric font")).toHaveValue("mono");
+  await expect(page.getByLabel("Lyric effect")).toHaveValue("typewriter");
+  await ruler.click({ position: { x: 8, y: 5 } });
+  await expect.poll(async () => (await redPixels()).count).toBeGreaterThan(100);
+  await page.getByRole("button", { name: "↗ Export video" }).click();
+  const dialog = page.getByRole("dialog", { name: "Export your video" });
+  await dialog.getByLabel("Resolution").selectOption("720");
+  const download = page.waitForEvent("download", { timeout: 35000 });
+  await dialog.getByRole("button", { name: "Start export" }).click();
+  const file = await download;
+  const bytes = await readFile(await file.path());
+  const count = await page.evaluate(
+    async ({ base64, type }) => {
+      const data = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([data], { type }));
+      try {
+        const video = document.createElement("video");
+        video.src = url;
+        await new Promise<void>((resolve, reject) => {
+          video.onloadeddata = () => resolve();
+          video.onerror = () => reject(new Error("Cannot decode export"));
+        });
+        video.currentTime = 0.6;
+        await new Promise<void>((resolve, reject) => {
+          video.onseeked = () => resolve();
+          video.onerror = () => reject(new Error("Cannot seek export"));
+        });
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(video, 0, 0);
+        const pixels = ctx.getImageData(200, 275, 880, 170).data;
+        let red = 0;
+        for (let i = 0; i < pixels.length; i += 4)
+          if (pixels[i] > 120 && pixels[i] > pixels[i + 1] * 2) red++;
+        return red;
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    },
+    {
+      base64: bytes.toString("base64"),
+      type: file.suggestedFilename().endsWith(".mp4")
+        ? "video/mp4"
+        : "video/webm",
+    },
+  );
+  expect(count).toBeGreaterThan(100);
+});
 
 test("string visualizer reacts to audio and retains its instrument after reload", async ({
   page,

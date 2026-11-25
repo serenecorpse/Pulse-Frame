@@ -1,5 +1,5 @@
 import { silentFeatures, type AudioFeatures } from "./audio-features";
-import { activeCueAtTime, parseLyrics } from "./lyrics";
+import { activeCueAtTime, lyricCueTiming, parseLyrics } from "./lyrics";
 import { cameraAt, cameraCrop, drawCamera } from "./motion";
 import { instrumentStrings, stringDisplacement, stringLevel } from "./strings";
 import {
@@ -7,6 +7,8 @@ import {
   dimensions,
   durationOf,
   isBeatEffect,
+  lyricFonts,
+  orderedFootage,
   type Asset,
   type Clip,
   type EffectType,
@@ -799,7 +801,7 @@ export function renderScene(
         time <
           clip.start + (clip.isLyrics ? durationOf(project) : clip.duration),
     );
-  for (const clip of [...active("video"), ...active("image")]) {
+  for (const clip of orderedFootage([...active("video"), ...active("image")])) {
     const asset = assets.find((item) => item.id === clip.assetId);
     const source = asset?.element;
     if (
@@ -938,18 +940,66 @@ export function renderScene(
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     const size = (Math.max(20, w * 0.032) * clip.scale) / 100;
-    ctx.font = `700 ${size}px sans-serif`;
+    const effect = clip.isLyrics ? project.lyricEffect : "classic";
+    const timing =
+      clip.isLyrics && cue ? lyricCueTiming(cue, cues, time) : null;
+    const entrance = timing
+      ? clamp(
+          (time - timing.start) /
+            Math.max(0.08, Math.min(0.65, (timing.end - timing.start) * 0.45)),
+        )
+      : 1;
+    const eased = 1 - (1 - entrance) ** 3;
+    const x = (clip.x / baseW) * w;
+    const baseY = (clip.y / baseH) * h;
+    if (effect === "fade" || effect === "rise" || effect === "pop")
+      ctx.globalAlpha *= eased;
+    if (effect === "rise") ctx.translate(0, (1 - eased) * size * 0.7);
+    if (effect === "pop") {
+      const scale = 0.75 + 0.25 * eased;
+      ctx.translate(x, baseY);
+      ctx.scale(scale, scale);
+      ctx.translate(-x, -baseY);
+    }
+    ctx.font = `700 ${size}px ${clip.isLyrics ? lyricFonts[project.lyricFont].family : "sans-serif"}`;
     ctx.lineWidth = Math.max(2, size * 0.08);
     ctx.strokeStyle = "#08080acc";
     ctx.fillStyle = project.lyricColor;
-    ctx.shadowColor = "#000";
-    ctx.shadowBlur = 14 * unit;
+    ctx.shadowColor = effect === "neon" ? project.lyricColor : "#000";
+    ctx.shadowBlur =
+      effect === "neon" ? (20 + 6 * Math.sin(time * 4)) * unit : 14 * unit;
     const lines = text.split("\n");
+    const totalCharacters = lines.reduce(
+      (sum, line) => sum + Array.from(line).length,
+      0,
+    );
+    const revealed = Math.floor(totalCharacters * entrance);
+    let previousCharacters = 0;
     lines.forEach((line, i) => {
-      const y =
-        (clip.y / baseH) * h + (i - (lines.length - 1) / 2) * size * 1.25;
-      ctx.strokeText(line, (clip.x / baseW) * w, y, w * 0.84);
-      ctx.fillText(line, (clip.x / baseW) * w, y, w * 0.84);
+      const y = baseY + (i - (lines.length - 1) / 2) * size * 1.25;
+      ctx.save();
+      if (effect === "typewriter") {
+        const characters = Array.from(line);
+        const count = Math.max(
+          0,
+          Math.min(characters.length, revealed - previousCharacters),
+        );
+        previousCharacters += characters.length;
+        if (count < characters.length) {
+          const width = ctx.measureText(line).width;
+          const fit = width > w * 0.84 ? (w * 0.84) / width : 1;
+          ctx.beginPath();
+          ctx.rect(
+            x - (width * fit) / 2,
+            y - size,
+            ctx.measureText(characters.slice(0, count).join("")).width * fit,
+            size * 2,
+          );
+          ctx.clip();
+        }
+      }
+      ctx.strokeText(line, x, y, w * 0.84);
+      ctx.fillText(line, x, y, w * 0.84);
       if (
         clip.isLyrics &&
         project.karaoke &&
@@ -967,17 +1017,13 @@ export function renderScene(
         const textWidth = Math.min(w * 0.84, ctx.measureText(line).width);
         ctx.save();
         ctx.beginPath();
-        ctx.rect(
-          (clip.x / baseW) * w - textWidth / 2,
-          y - size,
-          textWidth * progress,
-          size * 2,
-        );
+        ctx.rect(x - textWidth / 2, y - size, textWidth * progress, size * 2);
         ctx.clip();
         ctx.fillStyle = "#bba2ff";
-        ctx.fillText(line, (clip.x / baseW) * w, y, w * 0.84);
+        ctx.fillText(line, x, y, w * 0.84);
         ctx.restore();
       }
+      ctx.restore();
     });
     ctx.restore();
   }

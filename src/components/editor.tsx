@@ -26,6 +26,10 @@ import {
   formatTime,
   initialProject,
   isBeatEffect,
+  lyricEffects,
+  lyricFonts,
+  moveFootageLayer,
+  orderedFootage,
   safeName,
   stringInstruments,
   type Aspect,
@@ -34,19 +38,23 @@ import {
   type Clip,
   type EffectType,
   type Lane,
+  type LyricEffect,
+  type LyricFont,
   type Project,
   type StringInstrument,
 } from "@/lib/project";
 import { renderScene } from "@/lib/render";
 import { BeatTracker } from "@/lib/audio-features";
+import { editClipTiming, layoutLane, snapDelta } from "@/lib/timeline";
 import { verifyVideo } from "@/lib/video";
 import { extractAudio } from "@/lib/extract-audio";
 import Upscaler from "./upscaler";
 import MotionGraph from "./motion-graph";
 
-type Panel = "media" | "effects" | "text" | "motion" | "upscale";
+type Panel = "media" | "layers" | "effects" | "text" | "motion" | "upscale";
 const panels: { id: Panel; label: string; icon: string }[] = [
   { id: "media", label: "Media", icon: "◈" },
+  { id: "layers", label: "Layers", icon: "▤" },
   { id: "effects", label: "Effects", icon: "✳" },
   { id: "text", label: "Text", icon: "T" },
   { id: "motion", label: "Motion", icon: "◉" },
@@ -275,6 +283,11 @@ function readProject(value: unknown): Project {
           ? ((saved.color ?? effect?.color) as string)
           : undefined,
       sensitivity: number(saved.sensitivity ?? effect?.sensitivity, 70),
+      layerOrder:
+        typeof saved.layerOrder === "number" &&
+        Number.isFinite(saved.layerOrder)
+          ? saved.layerOrder
+          : undefined,
       stringInstrument: stringInstruments.includes(
         saved.stringInstrument as StringInstrument,
       )
@@ -363,6 +376,14 @@ function readProject(value: unknown): Project {
     karaoke: project.karaoke !== false,
     lyricColor:
       typeof project.lyricColor === "string" ? project.lyricColor : "#ffffff",
+    lyricFont:
+      typeof project.lyricFont === "string" &&
+      Object.hasOwn(lyricFonts, project.lyricFont)
+        ? (project.lyricFont as LyricFont)
+        : "classic",
+    lyricEffect: lyricEffects.includes(project.lyricEffect as LyricEffect)
+      ? (project.lyricEffect as LyricEffect)
+      : "classic",
     assets,
     clips,
   };
@@ -450,6 +471,23 @@ export default function Editor() {
     exportRef = useRef<MediaRecorder | null>(null);
   const cancelExportRef = useRef<(() => void) | null>(null);
   const extractionRef = useRef<AbortController | null>(null);
+  const positionDrag = useRef<{
+    id: string;
+    clientX: number;
+    clientY: number;
+    x: number;
+    y: number;
+    before: Project;
+    changed: boolean;
+  } | null>(null);
+  const timelineDrag = useRef<{
+    original: Clip;
+    x: number;
+    mode: "move" | "start" | "end";
+    changed: boolean;
+    pixelsPerSecond: number;
+    draft: Pick<Clip, "start" | "duration" | "offset">;
+  } | null>(null);
   const guideDrag = useRef<{
     id: string;
     frame: "start" | "end";
@@ -465,6 +503,7 @@ export default function Editor() {
     [muted, setMuted] = useState(false);
   const [filter, setFilter] = useState("all"),
     [zoom, setZoom] = useState(80);
+  const [snapping, setSnapping] = useState(true);
   const [preset, setPreset] = useState<MotionPreset>("ken-burns"),
     [easing, setEasing] = useState<Easing>("pchip");
   const [guides, setGuides] = useState(true);
@@ -649,6 +688,7 @@ export default function Editor() {
       const hasAudio = p.clips.some(
         (item) =>
           item.lane === "audio" &&
+          item.visible &&
           time >= item.start &&
           time < item.start + item.duration &&
           assetsRef.current.some((asset) => asset.id === item.assetId),
@@ -889,6 +929,54 @@ export default function Editor() {
         y: (item.y / oldH) * h,
       })),
     });
+  };
+  const moveTimelineClip = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = timelineDrag.current;
+    if (!drag) return;
+    const movement = event.clientX - drag.x;
+    if (Math.abs(movement) < 3 && !drag.changed) return;
+    drag.changed = true;
+    let delta = movement / drag.pixelsPerSecond;
+    if (snapping && !event.altKey) {
+      const targets = [
+        0,
+        timeRef.current,
+        ...projectRef.current.clips
+          .filter((item) => item.id !== drag.original.id)
+          .flatMap((item) => [item.start, item.start + item.duration]),
+      ];
+      delta = snapDelta(
+        drag.original,
+        drag.mode,
+        delta,
+        targets,
+        8 / drag.pixelsPerSecond,
+      );
+    }
+    const asset = assetsRef.current.find(
+      (item) => item.id === drag.original.assetId,
+    );
+    drag.draft = editClipTiming(
+      drag.original,
+      drag.mode,
+      delta,
+      asset?.duration,
+    );
+    event.currentTarget.style.left = `${drag.draft.start * drag.pixelsPerSecond}px`;
+    event.currentTarget.style.width = `${Math.max(38, drag.draft.duration * drag.pixelsPerSecond)}px`;
+  };
+  const finishTimelineClip = (
+    event: ReactPointerEvent<HTMLDivElement>,
+    cancel = false,
+  ) => {
+    const drag = timelineDrag.current;
+    if (!drag) return;
+    timelineDrag.current = null;
+    if (drag.changed && !cancel) updateClip(drag.original.id, drag.draft);
+    else {
+      event.currentTarget.style.left = `${drag.original.start * drag.pixelsPerSecond}px`;
+      event.currentTarget.style.width = `${Math.max(38, drag.original.duration * drag.pixelsPerSecond)}px`;
+    }
   };
   const moveGuide = (event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = guideDrag.current;
@@ -1313,6 +1401,8 @@ export default function Editor() {
     exportFrame = requestAnimationFrame(draw);
   };
 
+  if (!ready) return <div role="status">Loading Pulseframe editor...</div>;
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -1476,6 +1566,143 @@ export default function Editor() {
                 </div>
               </>
             )}
+            {panel === "layers" && (
+              <>
+                <div className="section-heading">
+                  <div>
+                    <h2>Layers</h2>
+                    <p>Select, hide, or reorder your footage</p>
+                  </div>
+                </div>
+                {!project.clips.length && (
+                  <p className="layers-empty">
+                    Import media or add an effect to start building your
+                    composition.
+                  </p>
+                )}
+                {(
+                  [
+                    [
+                      "TEXT",
+                      project.clips
+                        .filter((item) => item.lane === "text")
+                        .reverse(),
+                    ],
+                    [
+                      "EQUALIZERS",
+                      project.clips
+                        .filter(
+                          (item) =>
+                            item.lane === "visualizer" &&
+                            !isBeatEffect(item.effect),
+                        )
+                        .reverse(),
+                    ],
+                    [
+                      "BEAT FX",
+                      project.clips
+                        .filter(
+                          (item) =>
+                            item.lane === "visualizer" &&
+                            isBeatEffect(item.effect),
+                        )
+                        .reverse(),
+                    ],
+                    ["FOOTAGE", orderedFootage(project.clips).reverse()],
+                    [
+                      "AUDIO",
+                      project.clips
+                        .filter((item) => item.lane === "audio")
+                        .reverse(),
+                    ],
+                  ] as const
+                ).map(
+                  ([group, items]) =>
+                    items.length > 0 && (
+                      <div className="layer-group" key={group}>
+                        <div className="layer-group-heading">
+                          {group} <span>{items.length}</span>
+                        </div>
+                        {items.map((item, index) => (
+                          <div
+                            className={`layer-row ${selected === item.id ? "is-selected" : ""} ${!item.visible ? "is-hidden" : ""}`}
+                            key={item.id}
+                          >
+                            <button
+                              className="layer-select"
+                              title={item.name}
+                              onClick={() => setSelected(item.id)}
+                            >
+                              <span
+                                className={`layer-dot layer-dot-${item.lane}`}
+                              />
+                              <span className="layer-name">
+                                {item.name}
+                                <small>
+                                  {formatTime(item.start)} ·{" "}
+                                  {formatTime(item.duration)}
+                                </small>
+                              </span>
+                            </button>
+                            {group === "FOOTAGE" && (
+                              <div className="layer-order">
+                                <button
+                                  aria-label={`Move ${item.name} forward`}
+                                  title="Move forward"
+                                  disabled={index === 0}
+                                  onClick={() =>
+                                    update({
+                                      ...projectRef.current,
+                                      clips: moveFootageLayer(
+                                        projectRef.current.clips,
+                                        item.id,
+                                        1,
+                                      ),
+                                    })
+                                  }
+                                >
+                                  ↑
+                                </button>
+                                <button
+                                  aria-label={`Move ${item.name} backward`}
+                                  title="Move backward"
+                                  disabled={index === items.length - 1}
+                                  onClick={() =>
+                                    update({
+                                      ...projectRef.current,
+                                      clips: moveFootageLayer(
+                                        projectRef.current.clips,
+                                        item.id,
+                                        -1,
+                                      ),
+                                    })
+                                  }
+                                >
+                                  ↓
+                                </button>
+                              </div>
+                            )}
+                            <button
+                              className="layer-visibility"
+                              aria-label={`${item.visible ? "Hide" : "Show"} ${item.name}`}
+                              title={item.visible ? "Hide layer" : "Show layer"}
+                              onClick={() =>
+                                updateClip(item.id, { visible: !item.visible })
+                              }
+                            >
+                              {item.visible ? "◉" : "⊘"}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ),
+                )}
+                <p className="layers-note">
+                  Text and equalizers sit above footage. Beat FX affect the
+                  footage beneath.
+                </p>
+              </>
+            )}
             {panel === "effects" && (
               <>
                 <div className="section-heading">
@@ -1544,6 +1771,44 @@ export default function Editor() {
                       update({ ...project, lyricColor: event.target.value })
                     }
                   />
+                </div>
+                <div className="field-row">
+                  <label htmlFor="lyricFont">Lyric font</label>
+                  <select
+                    id="lyricFont"
+                    value={project.lyricFont}
+                    onChange={(event) =>
+                      update({
+                        ...project,
+                        lyricFont: event.target.value as LyricFont,
+                      })
+                    }
+                  >
+                    {(Object.keys(lyricFonts) as LyricFont[]).map((font) => (
+                      <option key={font} value={font}>
+                        {lyricFonts[font].label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field-row">
+                  <label htmlFor="lyricEffect">Lyric effect</label>
+                  <select
+                    id="lyricEffect"
+                    value={project.lyricEffect}
+                    onChange={(event) =>
+                      update({
+                        ...project,
+                        lyricEffect: event.target.value as LyricEffect,
+                      })
+                    }
+                  >
+                    {lyricEffects.map((effect) => (
+                      <option key={effect} value={effect}>
+                        {pretty(effect)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <label className="toggle-row">
                   <span>
@@ -1951,6 +2216,79 @@ export default function Editor() {
                 width={dimensions[project.aspect][0]}
                 height={dimensions[project.aspect][1]}
               />
+              {clip &&
+                clip.visible &&
+                clip.lane !== "audio" &&
+                (!isBeatEffect(clip.effect) ||
+                  clip.effect === "beat-zoom" ||
+                  clip.effect === "vignette-pulse") &&
+                !(panel === "motion" && guides && clip.motion) && (
+                  <button
+                    type="button"
+                    className="preview-position-handle"
+                    aria-label={`Move ${clip.name} on canvas`}
+                    title="Drag to reposition; snaps to center"
+                    style={{
+                      left: `${(clip.x / dimensions[project.aspect][0]) * 100}%`,
+                      top: `${(clip.y / dimensions[project.aspect][1]) * 100}%`,
+                    }}
+                    onPointerDown={(event) => {
+                      if (event.button !== 0) return;
+                      event.preventDefault();
+                      event.currentTarget.setPointerCapture(event.pointerId);
+                      positionDrag.current = {
+                        id: clip.id,
+                        clientX: event.clientX,
+                        clientY: event.clientY,
+                        x: clip.x,
+                        y: clip.y,
+                        before: projectRef.current,
+                        changed: false,
+                      };
+                    }}
+                    onPointerMove={(event) => {
+                      const drag = positionDrag.current;
+                      const rect = stageRef.current?.getBoundingClientRect();
+                      if (!drag || !rect || !rect.width || !rect.height) return;
+                      const dx = event.clientX - drag.clientX,
+                        dy = event.clientY - drag.clientY;
+                      if (!drag.changed && Math.hypot(dx, dy) < 3) return;
+                      drag.changed = true;
+                      const [w, h] = dimensions[projectRef.current.aspect];
+                      let x = drag.x + (dx / rect.width) * w,
+                        y = drag.y + (dy / rect.height) * h;
+                      if (snapping && !event.altKey) {
+                        if (Math.abs(x - w / 2) < (6 / rect.width) * w)
+                          x = w / 2;
+                        if (Math.abs(y - h / 2) < (6 / rect.height) * h)
+                          y = h / 2;
+                      }
+                      updateClip(
+                        drag.id,
+                        { x: Math.round(x), y: Math.round(y) },
+                        false,
+                      );
+                    }}
+                    onPointerUp={() => {
+                      const drag = positionDrag.current;
+                      positionDrag.current = null;
+                      if (drag?.changed) {
+                        undo.current = [
+                          ...undo.current.slice(-34),
+                          drag.before,
+                        ];
+                        redo.current = [];
+                      }
+                    }}
+                    onPointerCancel={() => {
+                      const drag = positionDrag.current;
+                      positionDrag.current = null;
+                      if (drag?.changed) update(drag.before, false);
+                    }}
+                  >
+                    ✥
+                  </button>
+                )}
               {panel === "motion" &&
                 guides &&
                 clip?.motion &&
@@ -2036,13 +2374,25 @@ export default function Editor() {
           </div>
           <div className="transport">
             <div className="transport-side">
-              <button className="transport-icon" onClick={() => goTo(0)}>
+              <button
+                className="transport-icon"
+                aria-label="Go to beginning"
+                onClick={() => goTo(0)}
+              >
                 |◀
               </button>
-              <button className="play-button" onClick={() => void play()}>
+              <button
+                className="play-button"
+                aria-label={playing ? "Pause" : "Play"}
+                onClick={() => void play()}
+              >
                 {playing ? "Ⅱ" : "▶"}
               </button>
-              <button className="transport-icon" onClick={() => goTo(duration)}>
+              <button
+                className="transport-icon"
+                aria-label="Go to end"
+                onClick={() => goTo(duration)}
+              >
                 ▶|
               </button>
               <span className="time-display">
@@ -2052,6 +2402,7 @@ export default function Editor() {
             <div className="transport-side">
               <button
                 className="transport-icon"
+                aria-label={muted ? "Unmute" : "Mute"}
                 onClick={() => setMuted(!muted)}
               >
                 {muted ? "⊘" : "◖"}
@@ -2067,6 +2418,8 @@ export default function Editor() {
               />
               <button
                 className="transport-icon"
+                aria-label="Loop playback"
+                aria-pressed={loop}
                 onClick={() => setLoop(!loop)}
                 style={{ color: loop ? "#b49aff" : undefined }}
               >
@@ -2084,10 +2437,20 @@ export default function Editor() {
               </div>
               <div className="timeline-actions">
                 <button
+                  className={`timeline-action snap-toggle ${snapping ? "active" : ""}`}
+                  aria-pressed={snapping}
+                  title="Snap to clip edges and playhead (hold Alt to bypass)"
+                  onClick={() => setSnapping(!snapping)}
+                >
+                  ⌁ Snap
+                </button>
+                <button
                   className="timeline-action"
+                  disabled={!clip || clip.isLyrics}
                   onClick={() => {
                     if (
                       !clip ||
+                      clip.isLyrics ||
                       currentTime <= clip.start ||
                       currentTime >= clip.start + clip.duration
                     )
@@ -2115,12 +2478,15 @@ export default function Editor() {
                 </button>
                 <button
                   className="timeline-action"
+                  aria-label="Duplicate selected clip"
+                  disabled={!clip || clip.isLyrics}
                   onClick={() => {
                     if (!clip) return;
                     const copy = {
                       ...structuredClone(clip),
                       id: crypto.randomUUID(),
                       start: clip.start + clip.duration,
+                      layerOrder: undefined,
                     };
                     update({ ...project, clips: [...project.clips, copy] });
                     setSelected(copy.id);
@@ -2130,6 +2496,8 @@ export default function Editor() {
                 </button>
                 <button
                   className="timeline-action"
+                  aria-label="Delete selected clip"
+                  disabled={!clip}
                   onClick={() => {
                     if (!clip) return;
                     update({
@@ -2159,6 +2527,14 @@ export default function Editor() {
                 <div
                   className="timeline-ruler"
                   style={{ width: timelineWidth }}
+                  title="Click to move playhead"
+                  onClick={(event) =>
+                    goTo(
+                      (event.clientX -
+                        event.currentTarget.getBoundingClientRect().left) /
+                        pixelsPerSecond,
+                    )
+                  }
                 >
                   {Array.from(
                     { length: Math.floor(duration / tickInterval) + 1 },
@@ -2181,38 +2557,75 @@ export default function Editor() {
                 >
                   <span />
                 </div>
-                {lanes.map((lane) => (
-                  <div className="track-row" key={lane}>
-                    <div className="track-label">{pretty(lane)}</div>
-                    <div
-                      className="track-lane"
-                      style={{ width: timelineWidth }}
-                      onClick={(event) =>
-                        goTo(
-                          (event.clientX -
-                            event.currentTarget.getBoundingClientRect().left) /
-                            pixelsPerSecond,
-                        )
-                      }
-                    >
-                      {project.clips
-                        .filter((item) => item.lane === lane)
-                        .map((item) => (
+                {lanes.flatMap((lane) =>
+                  layoutLane(
+                    project.clips.filter((item) => item.lane === lane),
+                    pixelsPerSecond,
+                  ).map((row, rowIndex) => (
+                    <div className="track-row" key={`${lane}-${rowIndex}`}>
+                      <div className="track-label">
+                        {pretty(lane)}
+                        {rowIndex > 0 ? ` ${rowIndex + 1}` : ""}
+                      </div>
+                      <div
+                        className="track-lane"
+                        style={{ width: timelineWidth }}
+                        onClick={(event) =>
+                          goTo(
+                            (event.clientX -
+                              event.currentTarget.getBoundingClientRect()
+                                .left) /
+                              pixelsPerSecond,
+                          )
+                        }
+                      >
+                        {row.map((item) => (
                           <div
                             key={item.id}
-                            draggable
-                            onDragEnd={(event) => {
-                              const rect =
-                                event.currentTarget.parentElement?.getBoundingClientRect();
-                              if (rect && event.clientX)
-                                updateClip(item.id, {
-                                  start: Math.max(
-                                    0,
-                                    (event.clientX - rect.left) /
-                                      pixelsPerSecond,
-                                  ),
-                                });
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`${item.name}, ${pretty(lane)} clip`}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                setSelected(item.id);
+                              }
                             }}
+                            onPointerDown={(event) => {
+                              if (event.button !== 0) return;
+                              event.stopPropagation();
+                              setSelected(item.id);
+                              const target = event.target as HTMLElement;
+                              const edge = target.dataset.trim;
+                              const mode =
+                                edge === "start" || edge === "end"
+                                  ? edge
+                                  : "move";
+                              event.currentTarget.setPointerCapture(
+                                event.pointerId,
+                              );
+                              timelineDrag.current = {
+                                original: item,
+                                x: event.clientX,
+                                mode,
+                                changed: false,
+                                pixelsPerSecond,
+                                draft: {
+                                  start: item.start,
+                                  duration: item.duration,
+                                  offset: item.offset,
+                                },
+                              };
+                            }}
+                            onPointerMove={moveTimelineClip}
+                            onPointerUp={(event) => {
+                              event.stopPropagation();
+                              finishTimelineClip(event);
+                            }}
+                            onPointerCancel={(event) =>
+                              finishTimelineClip(event, true)
+                            }
                             className={`timeline-clip clip-${lane} ${selected === item.id ? "selected" : ""}`}
                             style={{
                               left: item.start * pixelsPerSecond,
@@ -2226,12 +2639,29 @@ export default function Editor() {
                               setSelected(item.id);
                             }}
                           >
-                            {item.name}
+                            {!item.isLyrics && (
+                              <span
+                                className="trim-handle trim-start"
+                                data-trim="start"
+                                title="Trim start"
+                              />
+                            )}
+                            <span className="timeline-clip-name">
+                              {item.name}
+                            </span>
+                            {!item.isLyrics && (
+                              <span
+                                className="trim-handle trim-end"
+                                data-trim="end"
+                                title="Trim end"
+                              />
+                            )}
                           </div>
                         ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )),
+                )}
               </div>
             </div>
           </div>
@@ -2254,6 +2684,10 @@ export default function Editor() {
                 </div>
                 <button
                   className="visibility-button"
+                  aria-label={
+                    clip.visible ? "Hide selected layer" : "Show selected layer"
+                  }
+                  title={clip.visible ? "Hide layer" : "Show layer"}
                   onClick={() =>
                     updateClip(clip.id, { visible: !clip.visible })
                   }

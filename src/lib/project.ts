@@ -3,6 +3,25 @@ import type { Motion } from "./motion";
 export type Lane = "audio" | "video" | "image" | "visualizer" | "text";
 export type AssetType = "audio" | "video" | "image" | "lyrics" | "text";
 export type Aspect = "16:9" | "9:16" | "1:1" | "4:5";
+export const lyricFonts = {
+  classic: { label: "Classic sans", family: "sans-serif" },
+  modern: { label: "Modern (Arial)", family: "Arial, sans-serif" },
+  editorial: { label: "Editorial (Georgia)", family: "Georgia, serif" },
+  cinematic: { label: "Cinematic (Times)", family: '"Times New Roman", serif' },
+  bold: { label: "Bold (Impact)", family: "Impact, sans-serif" },
+  mono: { label: "Monospace", family: '"Courier New", monospace' },
+  handwritten: { label: "Handwritten", family: '"Comic Sans MS", cursive' },
+} as const;
+export type LyricFont = keyof typeof lyricFonts;
+export const lyricEffects = [
+  "classic",
+  "fade",
+  "rise",
+  "pop",
+  "typewriter",
+  "neon",
+] as const;
+export type LyricEffect = (typeof lyricEffects)[number];
 export const equalizerEffects = [
   "spectrum",
   "mirror-bars",
@@ -70,6 +89,7 @@ export interface Clip {
   color?: string;
   sensitivity?: number;
   stringInstrument?: StringInstrument;
+  layerOrder?: number;
   isLyrics?: boolean;
   motion?: Motion;
 }
@@ -80,6 +100,8 @@ export interface Project {
   lyrics: string;
   karaoke: boolean;
   lyricColor: string;
+  lyricFont: LyricFont;
+  lyricEffect: LyricEffect;
   assets: AssetInfo[];
   clips: Clip[];
 }
@@ -91,6 +113,8 @@ export const initialProject: Project = {
   lyrics: "",
   karaoke: true,
   lyricColor: "#ffffff",
+  lyricFont: "classic",
+  lyricEffect: "classic",
   assets: [],
   clips: [],
 };
@@ -100,6 +124,33 @@ export const dimensions: Record<Aspect, [number, number]> = {
   "1:1": [900, 900],
   "4:5": [800, 1000],
 };
+export function orderedFootage(clips: Clip[]): Clip[] {
+  const footage = [
+    ...clips.filter((clip) => clip.lane === "video"),
+    ...clips.filter((clip) => clip.lane === "image"),
+  ];
+  return footage.sort(
+    (a, b) => (a.layerOrder ?? Infinity) - (b.layerOrder ?? Infinity),
+  );
+}
+
+export function moveFootageLayer(
+  clips: Clip[],
+  id: string,
+  direction: -1 | 1,
+): Clip[] {
+  const ordered = orderedFootage(clips);
+  const index = ordered.findIndex((clip) => clip.id === id);
+  const next = index + direction;
+  if (index < 0 || next < 0 || next >= ordered.length) return clips;
+  [ordered[index], ordered[next]] = [ordered[next], ordered[index]];
+  const positions = new Map(ordered.map((clip, i) => [clip.id, i]));
+  return clips.map((clip) =>
+    positions.has(clip.id)
+      ? { ...clip, layerOrder: positions.get(clip.id) }
+      : clip,
+  );
+}
 export function durationOf(project: Project): number {
   return project.clips.length
     ? Math.max(10, ...project.clips.map((clip) => clip.start + clip.duration))

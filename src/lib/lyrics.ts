@@ -85,3 +85,18 @@ export function activeCueAtTime(
     ? cues[Math.floor(Math.max(0, time) / 3.5) % cues.length]
     : null;
 }
+
+export function lyricCueTiming(
+  cue: LyricCue,
+  cues: LyricCue[],
+  time: number,
+): { start: number; end: number } {
+  if (cue.time === null) {
+    const start = Math.floor(Math.max(0, time) / 3.5) * 3.5;
+    return { start, end: start + 3.5 };
+  }
+  const start = cue.time;
+  const next = cues.find((item) => item.time !== null && item.time > start);
+  const end = Math.min(cue.endTime ?? Infinity, next?.time ?? Infinity);
+  return { start, end: Number.isFinite(end) ? end : start + 3 };
+}

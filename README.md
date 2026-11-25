@@ -17,6 +17,12 @@ Open http://localhost:3000. For a production build, run `npm run build` followed
 
 Import images, audio, video, LRC, SBV, or text files in the Media panel. Select a timeline clip to edit its timing and properties. Select an image and apply a camera preset in Motion. Camera guides and graph dots are draggable; keyframe values and times can also be edited. The Text panel supports LRC, SBV, and plain lyrics.
 
+Choose a lyric font and display effect in the Text panel: classic, fade, rise, pop, typewriter, or neon. Effects restart for each lyric cue and are included in exports; karaoke highlighting remains available for timed lyrics. Fonts use those installed on the device with browser fallbacks, so their appearance can vary by system.
+
+Use **Layers** to select or hide clips and move footage forward or backward. The composition uses fixed stages: footage, Beat FX, equalizers, then text. Only footage can be reordered; effects cannot be moved between stages.
+
+Drag clips on the timeline to move them, or drag their edge handles to trim them. Overlapping clips occupy separate rows. Click the ruler to seek. Snap aligns clip edges with the playhead and other clips; turn it off with **Snap** or hold Alt while dragging. Lyrics clips cannot be trimmed, split, or duplicated. Drag the selected layer's preview handle to reposition it; it snaps to the canvas center when snapping is enabled. Undo restores a completed drag.
+
 The Effects panel has two groups of audio-reactive layers, placed at the playhead:
 
 - **Equalizers** are drawn over the footage: Spectrum, Mirror bars, Radial bars, Circular, Waveform, Neon, Particles, Pulse, and Strings. Color, sensitivity, position, scale, and rotation are editable.

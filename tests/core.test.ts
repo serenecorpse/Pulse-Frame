@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activeCueAtTime, parseLyrics } from "../src/lib/lyrics.ts";
+import {
+  activeCueAtTime,
+  lyricCueTiming,
+  parseLyrics,
+} from "../src/lib/lyrics.ts";
 import {
   buildPreset,
   cameraAt,
@@ -17,6 +21,87 @@ import {
   stringDisplacement,
   stringLevel,
 } from "../src/lib/strings.ts";
+import {
+  moveFootageLayer,
+  orderedFootage,
+  type Clip,
+} from "../src/lib/project.ts";
+import { editClipTiming, layoutLane, snapDelta } from "../src/lib/timeline.ts";
+
+test("footage ordering preserves legacy video-under-image behavior and can be reordered", () => {
+  const clip = (id: string, lane: Clip["lane"]): Clip => ({
+    id,
+    name: id,
+    lane,
+    start: 0,
+    duration: 10,
+    x: 0,
+    y: 0,
+    scale: 100,
+    rotation: 0,
+    opacity: 100,
+    visible: true,
+    animation: "none",
+  });
+  const clips = [
+    clip("image", "image"),
+    clip("video", "video"),
+    clip("new", "image"),
+  ];
+  assert.deepEqual(
+    orderedFootage(clips).map((item) => item.id),
+    ["video", "image", "new"],
+  );
+  const moved = moveFootageLayer(clips, "video", 1);
+  assert.deepEqual(
+    orderedFootage(moved).map((item) => item.id),
+    ["image", "video", "new"],
+  );
+  assert.deepEqual(
+    orderedFootage([...moved, clip("added", "video")]).map((item) => item.id),
+    ["image", "video", "new", "added"],
+  );
+});
+
+test("timeline separates overlapping clips and trims media without losing source offsets", () => {
+  const clip: Clip = {
+    id: "one",
+    name: "one",
+    lane: "video",
+    start: 3,
+    duration: 5,
+    offset: 2,
+    x: 0,
+    y: 0,
+    scale: 100,
+    rotation: 0,
+    opacity: 100,
+    visible: true,
+    animation: "none",
+  };
+  const rows = layoutLane(
+    [
+      clip,
+      { ...clip, id: "two", start: 4 },
+      { ...clip, id: "three", start: 9 },
+    ],
+    10,
+  );
+  assert.equal(rows.length, 2);
+  assert.deepEqual(editClipTiming(clip, "start", 1, 10), {
+    start: 4,
+    duration: 4,
+    offset: 3,
+  });
+  assert.deepEqual(editClipTiming(clip, "start", -10, 10), {
+    start: 1,
+    duration: 7,
+    offset: 0,
+  });
+  assert.equal(editClipTiming(clip, "end", 10, 10).duration, 8);
+  assert.equal(editClipTiming(clip, "end", 10).duration, 5);
+  assert.equal(snapDelta(clip, "move", 1.9, [5], 0.2), 2);
+});
 
 test("string frequencies follow the corresponding logarithmic audio bands", () => {
   const audio = silentFeatures();
@@ -95,6 +180,21 @@ test("LRC and plain text timing remain supported", () => {
   assert.equal(activeCueAtTime(cues, 4)?.text, "First");
   assert.equal(activeCueAtTime(cues, 5)?.text, "Second");
   assert.equal(activeCueAtTime(parseLyrics("One\nTwo"), 4)?.text, "Two");
+});
+
+test("lyric effects restart at each cue and respect timed and plain lyric boundaries", () => {
+  const timed = parseLyrics(
+    "0:00:01.000,0:00:04.000\nFirst\n\n0:00:03.000,0:00:05.000\nSecond",
+  );
+  assert.deepEqual(lyricCueTiming(timed[0], timed, 1.5), { start: 1, end: 3 });
+  assert.deepEqual(lyricCueTiming(timed[1], timed, 3.1), { start: 3, end: 5 });
+  const untimed = parseLyrics("First\nSecond");
+  assert.deepEqual(lyricCueTiming(untimed[1], untimed, 4), {
+    start: 3.5,
+    end: 7,
+  });
+  const lrc = parseLyrics("[00:02.00]Last");
+  assert.deepEqual(lyricCueTiming(lrc[0], lrc, 2), { start: 2, end: 5 });
 });
 
 test("camera interpolation handles duplicate keyframes and hold easing", () => {
