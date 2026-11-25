@@ -71,9 +71,55 @@ test("the sidebar and inspector remain usable on a narrow screen", async ({ page
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.getByRole("button", { name: "✳ Effects" }).click();
-  await page.getByRole("button", { name: "✧ Spectrum" }).click();
+  await page.getByRole("button", { name: "Spectrum", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Inspector" })).toBeVisible();
   await expect(page.getByText("VISUALIZER LAYER")).toBeVisible();
+});
+
+function kickTrack(seconds = 4, rate = 48000): Buffer {
+  const samples = seconds * rate, buffer = Buffer.alloc(44 + samples * 2);
+  buffer.write("RIFF", 0); buffer.writeUInt32LE(36 + samples * 2, 4); buffer.write("WAVEfmt ", 8);
+  buffer.writeUInt32LE(16, 16); buffer.writeUInt16LE(1, 20); buffer.writeUInt16LE(1, 22); buffer.writeUInt32LE(rate, 24);
+  buffer.writeUInt32LE(rate * 2, 28); buffer.writeUInt16LE(2, 32); buffer.writeUInt16LE(16, 34); buffer.write("data", 36); buffer.writeUInt32LE(samples * 2, 40);
+  for (let i = 0; i < samples; i++) {
+    const sinceKick = (i / rate) % .5;
+    buffer.writeInt16LE(Math.round(Math.sin(2 * Math.PI * 60 * sinceKick) * Math.exp(-sinceKick / .09) * .9 * 32767), 44 + i * 2);
+  }
+  return buffer;
+}
+
+test("beat effects react to kicks in the playing audio", async ({ page }) => {
+  await page.goto("/");
+  const png = await page.evaluate(() => {
+    const canvas = document.createElement("canvas"); canvas.width = 640; canvas.height = 360;
+    const ctx = canvas.getContext("2d")!; ctx.fillStyle = "#202020"; ctx.fillRect(0, 0, 640, 360);
+    return canvas.toDataURL("image/png").split(",")[1];
+  });
+  await page.locator('input[accept^="audio/"]').setInputFiles([
+    { name: "dark.png", mimeType: "image/png", buffer: Buffer.from(png, "base64") },
+    { name: "kicks.wav", mimeType: "audio/wav", buffer: kickTrack() },
+  ]);
+  await expect(page.getByText("2 assets in this session")).toBeVisible();
+  await page.getByRole("button", { name: "✳ Effects" }).click();
+  await page.getByRole("button", { name: "Invert Flash", exact: true }).click();
+  await page.locator(".play-button").click();
+  const brightness = await page.evaluate(async () => {
+    const canvas = document.querySelector<HTMLCanvasElement>(".preview-stage canvas")!, ctx = canvas.getContext("2d")!, values: number[] = [];
+    for (let i = 0; i < 100; i++) {
+      const [r, g, b] = ctx.getImageData(canvas.width / 2, canvas.height / 2, 1, 1).data;
+      values.push((r + g + b) / 3);
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    return values;
+  });
+  expect(Math.min(...brightness)).toBeLessThan(60);
+  expect(Math.max(...brightness)).toBeGreaterThan(140);
+
+  for (const name of ["Spectrum", "Mirror Bars", "Radial Bars", "Circular", "Waveform", "Neon", "Particles", "Pulse", "Beat Zoom", "Shake", "Glitch", "Rgb Split", "Hue Shift", "Color Flash", "Strobe", "Duotone", "Vhs", "Bloom", "Vignette Pulse", "Mirror"])
+    await page.getByRole("button", { name, exact: true }).click();
+  await page.waitForTimeout(1500);
+  await expect(page.getByText("Preview failed", { exact: false })).toHaveCount(0);
+  expect(await page.locator(".clip-visualizer").count()).toBe(21);
 });
 
 test("portrait previews retain their selected aspect ratio", async ({ page }) => {
@@ -124,7 +170,7 @@ test("very long project timelines do not create an unbounded number of ruler tic
 test("exports a decodable video at the requested dimensions", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "✳ Effects" }).click();
-  await page.getByRole("button", { name: "✧ Spectrum" }).click();
+  await page.getByRole("button", { name: "Spectrum", exact: true }).click();
   await page.getByRole("spinbutton", { name: "Duration" }).fill("1");
   await page.getByRole("button", { name: "↗ Export video" }).click();
   const dialog = page.getByRole("dialog", { name: "Export your video" });

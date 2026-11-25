@@ -3,7 +3,13 @@ import type { Motion } from "./motion";
 export type Lane = "audio" | "video" | "image" | "visualizer" | "text";
 export type AssetType = "audio" | "video" | "image" | "lyrics" | "text";
 export type Aspect = "16:9" | "9:16" | "1:1" | "4:5";
-export type EffectType = "spectrum" | "circular" | "waveform" | "neon" | "particles" | "pulse";
+export const equalizerEffects = ["spectrum", "mirror-bars", "radial-bars", "circular", "waveform", "neon", "particles", "pulse"] as const;
+export const beatEffects = ["beat-zoom", "shake", "glitch", "rgb-split", "hue-shift", "color-flash", "strobe", "duotone", "invert-flash", "vhs", "bloom", "vignette-pulse", "mirror"] as const;
+export type EffectType = typeof equalizerEffects[number] | typeof beatEffects[number];
+export const allEffects: readonly EffectType[] = [...equalizerEffects, ...beatEffects];
+export function isBeatEffect(effect: EffectType | undefined): boolean {
+  return !!effect && (beatEffects as readonly string[]).includes(effect);
+}
 export interface AssetInfo { id: string; name: string; type: AssetType; size: number }
 export interface Asset extends AssetInfo {
   url: string;

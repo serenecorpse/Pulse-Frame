@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { buildPreset, cameraAt, cameraCrop, interpolateTrack, type Easing, type MotionPreset } from "@/lib/motion";
-import { classify, dimensions, download, durationOf, formatTime, initialProject, safeName, type Aspect, type Asset, type AssetInfo, type Clip, type EffectType, type Lane, type Project } from "@/lib/project";
+import { allEffects, beatEffects, classify, dimensions, download, durationOf, equalizerEffects, formatTime, initialProject, isBeatEffect, safeName, type Aspect, type Asset, type AssetInfo, type Clip, type EffectType, type Lane, type Project } from "@/lib/project";
 import { renderScene } from "@/lib/render";
+import { BeatTracker } from "@/lib/audio-features";
 import { verifyVideo } from "@/lib/video";
 import { extractAudio } from "@/lib/extract-audio";
 import Upscaler from "./upscaler";
@@ -16,7 +17,29 @@ const panels: { id: Panel; label: string; icon: string }[] = [
   { id: "upscale", label: "Upscale", icon: "⇧" },
 ];
 const presets: MotionPreset[] = ["ken-burns", "pan-left", "pan-right", "pan-up", "pan-down", "diagonal", "orbit", "dolly", "reveal", "detail-tour", "handheld", "breathing"];
-const effects: EffectType[] = ["spectrum", "circular", "waveform", "neon", "particles", "pulse"];
+const effectInfo: Record<EffectType, { icon: string; description: string; color: string }> = {
+  "spectrum": { icon: "▁▃▆▃", description: "Frequency bars with falling peak caps", color: "#a78bfa" },
+  "mirror-bars": { icon: "▃█▃", description: "Bars mirrored around a center line", color: "#7dd3fc" },
+  "radial-bars": { icon: "✺", description: "Bars radiating from a rotating ring", color: "#f0abfc" },
+  "circular": { icon: "◯", description: "Smooth ring that bulges with the spectrum", color: "#a78bfa" },
+  "waveform": { icon: "∿", description: "Oscilloscope trace of the audio signal", color: "#6ee7b7" },
+  "neon": { icon: "⌇", description: "Glowing spectrum curve with reflection", color: "#22d3ee" },
+  "particles": { icon: "⁘", description: "Particles that burst outward on beats", color: "#c4b5fd" },
+  "pulse": { icon: "◉", description: "Bass-driven orb with beat shock rings", color: "#fb7185" },
+  "beat-zoom": { icon: "⤢", description: "Punches the image in on every kick", color: "#a78bfa" },
+  "shake": { icon: "≋", description: "Camera vibration driven by beats and bass", color: "#a78bfa" },
+  "glitch": { icon: "▚", description: "Slice displacement and color tearing on beats", color: "#35f0ff" },
+  "rgb-split": { icon: "◐", description: "Chromatic aberration that widens on beats", color: "#a78bfa" },
+  "hue-shift": { icon: "◑", description: "Cycles colors over time and jumps on beats", color: "#a78bfa" },
+  "color-flash": { icon: "✦", description: "Soft wash of the effect color on beats", color: "#ff4fd8" },
+  "strobe": { icon: "☼", description: "Hard flash on alternate beats. May affect photosensitive viewers.", color: "#ffffff" },
+  "duotone": { icon: "◧", description: "Two-tone color grade that breathes with bass", color: "#ffb347" },
+  "invert-flash": { icon: "◩", description: "Inverts colors on alternate beats. May affect photosensitive viewers.", color: "#ffffff" },
+  "vhs": { icon: "▤", description: "Scanlines, tracking jitter, and color bleed", color: "#a78bfa" },
+  "bloom": { icon: "✹", description: "Highlight glow that swells with the music", color: "#a78bfa" },
+  "vignette-pulse": { icon: "◎", description: "Edges darken and close in on beats", color: "#3b0764" },
+  "mirror": { icon: "⫴", description: "Mirrors the left half of the frame", color: "#a78bfa" },
+};
 const exportFormats = [
   { name: "WebM · VP9", mime: "video/webm;codecs=vp9,opus", extension: "webm" },
   { name: "WebM · VP8", mime: "video/webm;codecs=vp8,opus", extension: "webm" },
@@ -54,7 +77,7 @@ function readProject(value: unknown): Project {
       offset: Math.max(0, number(saved.offset, 0)),
       x: number(saved.x, width / 2), y: number(saved.y, height / 2), scale: number(saved.scale, 100),
       rotation: number(saved.rotation, 0), opacity: number(saved.opacity, 100), visible: saved.visible !== false, animation,
-      effect: effects.includes(effectName as EffectType) ? effectName as EffectType : undefined,
+      effect: allEffects.includes(effectName as EffectType) ? effectName as EffectType : undefined,
       color: typeof (saved.color ?? effect?.color) === "string" ? (saved.color ?? effect?.color) as string : undefined,
       sensitivity: number(saved.sensitivity ?? effect?.sensitivity, 70), isLyrics: saved.isLyrics === true,
     };
@@ -157,6 +180,7 @@ export default function Editor() {
   const [exportOpen, setExportOpen] = useState(false);
   const [extraction, setExtraction] = useState<{ name: string; progress: number } | null>(null);
   const undo = useRef<Project[]>([]), redo = useRef<Project[]>([]);
+  const [beatTracker] = useState(() => new BeatTracker());
   const duration = durationOf(project), clip = project.clips.find(item => item.id === selected);
   const pixelsPerSecond = Math.min(zoom / 10, 30000000 / duration);
   const timelineWidth = Math.max(900, duration * pixelsPerSecond);
@@ -222,7 +246,8 @@ export default function Editor() {
       const context = new AudioContext();
       audioContext.current = context;
       analyser.current = context.createAnalyser();
-      analyser.current.fftSize = 1024;
+      analyser.current.fftSize = 2048;
+      analyser.current.smoothingTimeConstant = .5;
       destination.current = context.createMediaStreamDestination();
       analyser.current.connect(context.destination);
       analyser.current.connect(destination.current);
@@ -267,17 +292,19 @@ export default function Editor() {
         }
         setCurrentTime(timeRef.current);
       }
+      const elapsed = (now - previous) / 1000;
       previous = now;
       syncMedia(timeRef.current, playingRef.current);
       let data: Uint8Array | undefined, waveform: Uint8Array | undefined;
       if (analyser.current) { const samples = new Uint8Array(analyser.current.frequencyBinCount), timeSamples = new Uint8Array(analyser.current.fftSize); analyser.current.getByteFrequencyData(samples); analyser.current.getByteTimeDomainData(timeSamples); data = samples; waveform = timeSamples; }
-      try { renderScene(canvas, projectRef.current, assetsRef.current, timeRef.current, data, waveform); }
+      const features = beatTracker.update(data, audioContext.current?.sampleRate ?? 48000, elapsed);
+      try { renderScene(canvas, projectRef.current, assetsRef.current, timeRef.current, features, waveform); }
       catch (error) { playingRef.current = false; setPlaying(false); notify(`Preview failed: ${error instanceof Error ? error.message : "rendering error"}`); return; }
       frameRef.current = requestAnimationFrame(draw);
     };
     frameRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frameRef.current);
-  }, [ready, loop, syncMedia, exporting]);
+  }, [ready, loop, syncMedia, exporting, beatTracker]);
 
   const importFiles = async (files: FileList | File[]) => {
     let success = true;
@@ -370,7 +397,8 @@ export default function Editor() {
   }, [connectAudio, goTo, notify]);
   const addEffect = (effect: EffectType) => {
     const [w, h] = dimensions[project.aspect], id = crypto.randomUUID();
-    const item: Clip = { id, name: pretty(effect), lane: "visualizer", start: currentTime, duration: Math.max(8, duration - currentTime), x: w / 2, y: effect === "circular" ? h / 2 : h * .76, scale: 100, rotation: 0, opacity: 100, visible: true, animation: "none", effect, color: "#a78bfa", sensitivity: 70 };
+    const lowered = effect === "spectrum" || effect === "waveform" || effect === "neon";
+    const item: Clip = { id, name: pretty(effect), lane: "visualizer", start: currentTime, duration: Math.max(8, duration - currentTime), x: w / 2, y: lowered ? h * .76 : h / 2, scale: 100, rotation: 0, opacity: 100, visible: true, animation: "none", effect, color: effectInfo[effect].color, sensitivity: 70 };
     update({ ...project, clips: [...project.clips, item] }); setSelected(id);
   };
   const updateLyrics = (text: string) => {
@@ -471,7 +499,8 @@ export default function Editor() {
       notify(`Could not start export: ${error instanceof Error ? error.message : "encoder error"}`); return;
     }
     goTo(0);
-    const start = performance.now(), total = durationOf(projectRef.current);
+    const start = performance.now(), total = durationOf(projectRef.current), exportTracker = new BeatTracker();
+    let previousFrame = start;
     const draw = (now: number) => {
       if (recorder.state !== "recording") return;
       timeRef.current = Math.min(total, (now - start) / 1000);
@@ -479,7 +508,9 @@ export default function Editor() {
       syncMedia(timeRef.current, true);
       let data: Uint8Array | undefined, waveform: Uint8Array | undefined;
       if (analyser.current) { const samples = new Uint8Array(analyser.current.frequencyBinCount), timeSamples = new Uint8Array(analyser.current.fftSize); analyser.current.getByteFrequencyData(samples); analyser.current.getByteTimeDomainData(timeSamples); data = samples; waveform = timeSamples; }
-      try { renderScene(output, projectRef.current, assetsRef.current, timeRef.current, data, waveform); }
+      const features = exportTracker.update(data, audioContext.current?.sampleRate ?? 48000, (now - previousFrame) / 1000);
+      previousFrame = now;
+      try { renderScene(output, projectRef.current, assetsRef.current, timeRef.current, features, waveform); }
       catch (error) { failed = true; notify(`Could not render export: ${error instanceof Error ? error.message : "rendering error"}`); recorder.stop(); return; }
       if (timeRef.current >= total) recorder.stop();
       else exportFrame = requestAnimationFrame(draw);
@@ -515,7 +546,8 @@ export default function Editor() {
                 <button className="asset-remove" title="Remove asset" onClick={() => removeAsset(item.id)}>×</button></div>;
             })}</div>
           </>}
-          {panel === "effects" && <><div className="section-heading"><div><h2>Visualizer library</h2><p>Audio-reactive effects</p></div></div><div className="effect-grid">{effects.map(effect => <button className="effect-card" key={effect} onClick={() => addEffect(effect)}><span className="effect-preview">✧</span>{pretty(effect)}</button>)}</div></>}
+          {panel === "effects" && <><div className="section-heading"><div><h2>Effects library</h2><p>Audio-reactive layers, added at the playhead</p></div></div>
+            {([["EQUALIZERS", "Drawn over your footage", equalizerEffects], ["BEAT FX", "Transform the image and video beneath", beatEffects]] as const).map(([title, subtitle, list]) => <div className="effect-group" key={title}><span className="group-label">{title} <small>{subtitle}</small></span><div className="effect-grid">{list.map(effect => <button className="effect-card" key={effect} title={effectInfo[effect].description} onClick={() => addEffect(effect)}><span className="effect-preview" aria-hidden="true">{effectInfo[effect].icon}</span>{pretty(effect)}</button>)}</div></div>)}</>}
           {panel === "text" && <><div className="section-heading"><div><h2>Lyrics &amp; text</h2><p>Words that move with music</p></div></div><label className="field-label" htmlFor="lyrics">LYRICS <span>Paste LRC, SBV, or plain text</span></label><textarea id="lyrics" className="lyrics-input" value={project.lyrics} onChange={event => updateLyrics(event.target.value)} />
             <div className="field-row"><label htmlFor="lyricColor">Text color</label><input id="lyricColor" type="color" value={project.lyricColor} onChange={event => update({ ...project, lyricColor: event.target.value })} /></div>
             <label className="toggle-row"><span><strong>Karaoke highlight</strong><small>Highlight the active lyric</small></span><input type="checkbox" checked={project.karaoke} onChange={event => update({ ...project, karaoke: event.target.checked })} /><i /></label>
@@ -565,9 +597,9 @@ export default function Editor() {
         <div className="inspector-section"><div className="inspector-section-title"><span>TRANSFORM</span><button className="reset-button" onClick={() => { const [width, height] = dimensions[project.aspect]; updateClip(clip.id, { x: width / 2, y: height / 2, scale: 100, rotation: 0, opacity: 100 }); }}>Reset</button></div><div className="control-grid">{(["x", "y"] as const).map(key => <label key={key}>Position {key.toUpperCase()}<input type="number" value={clip[key]} onChange={event => updateClip(clip.id, { [key]: Number(event.target.value) })} /></label>)}</div>
           {(["scale", "rotation", "opacity"] as const).map(key => <label key={key} className="slider-label"><span>{pretty(key)} <b>{clip[key]}</b></span><input type="range" min={key === "rotation" ? -180 : key === "scale" ? 10 : 0} max={key === "rotation" ? 180 : key === "scale" ? 250 : 100} value={clip[key]} onChange={event => updateClip(clip.id, { [key]: Number(event.target.value) })} /></label>)}</div>
         <div className="inspector-section"><div className="inspector-section-title">CLIP TIMING</div><div className="control-grid">{(["start", "duration"] as const).map(key => <label key={key}>{pretty(key)}<input type="number" step=".1" min={key === "duration" ? .1 : 0} value={clip[key]} onChange={event => updateClip(clip.id, { [key]: Math.max(key === "duration" ? .1 : 0, Number(event.target.value)) })} /></label>)}</div></div>
-        <div className="inspector-section"><label>Animation<select className="inspector-select" value={clip.animation} onChange={event => updateClip(clip.id, { animation: event.target.value as Clip["animation"] })}><option>none</option><option>pulse</option><option>float</option><option>zoom</option></select></label></div>
+        {(clip.lane === "image" || clip.lane === "video") && <div className="inspector-section"><label>Animation<select className="inspector-select" value={clip.animation} onChange={event => updateClip(clip.id, { animation: event.target.value as Clip["animation"] })}>        <option value="none">none</option><option value="pulse">beat pulse</option><option value="float">float</option><option value="zoom">zoom</option></select></label></div>}
         {clip.lane === "text" && !clip.isLyrics && <label>Text<input value={clip.name} onChange={event => updateClip(clip.id, { name: event.target.value })} /></label>}
-        {clip.lane === "visualizer" && <div className="inspector-section"><label>Effect color <input type="color" value={clip.color || "#a78bfa"} onChange={event => updateClip(clip.id, { color: event.target.value })} /></label><label className="slider-label"><span>Sensitivity</span><input type="range" min="10" max="150" value={clip.sensitivity ?? 70} onChange={event => updateClip(clip.id, { sensitivity: Number(event.target.value) })} /></label></div>}
+                {clip.lane === "visualizer" && <div className="inspector-section">{clip.effect && <p className="effect-description">{effectInfo[clip.effect].description}{isBeatEffect(clip.effect) && " Position sets the focal point for zoom and vignette."}</p>}<label>Effect color <input type="color" value={clip.color || "#a78bfa"} onChange={event => updateClip(clip.id, { color: event.target.value })} /></label><label className="slider-label"><span>{isBeatEffect(clip.effect) ? "Intensity" : "Sensitivity"} <b>{clip.sensitivity ?? 70}</b></span><input type="range" min="10" max="150" value={clip.sensitivity ?? 70} onChange={event => updateClip(clip.id, { sensitivity: Number(event.target.value) })} /></label></div>}
       </div>}</aside>
     </main>
     <input ref={inputRef} type="file" hidden multiple accept="audio/*,video/*,image/*,.lrc,.sbv,.txt" onChange={event => { if (event.target.files) void importFiles(event.target.files); event.target.value = ""; }} />

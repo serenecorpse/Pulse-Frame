@@ -42,3 +42,5 @@
   .center-column { min-height: 600px; }
   .inspector { display: flex; min-height: 180px; }
 }
+
+.effect-group .group-label small{float:right;font:9px var(--sans);letter-spacing:0;color:#6f6c78}.effect-card .effect-preview{height:20px;display:flex;align-items:center;font-size:15px;text-shadow:0 0 10px #9f82ff88}.effect-description{margin:0 0 12px;color:#8f8b98;font-size:9px;line-height:1.5}
