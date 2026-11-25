@@ -1,0 +1,1215 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>String Fire Audio Visualizer</title>
+
+    <style>
+      :root {
+        --bg: #07070d;
+        --panel: rgba(21, 21, 35, 0.88);
+        --border: rgba(255, 176, 66, 0.25);
+        --accent: #ffb347;
+        --text: #f7f0e7;
+        --muted: #b6a99a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        background:
+          radial-gradient(circle at 50% 0%, #25140b 0%, transparent 35%),
+          radial-gradient(circle at 50% 90%, #101a2b 0%, transparent 40%),
+          var(--bg);
+        font-family:
+          Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+      }
+
+      .app {
+        width: min(1400px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 24px 0 40px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: clamp(1.5rem, 3vw, 2.5rem);
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-align: center;
+        text-shadow: 0 0 24px rgba(255, 136, 0, 0.65);
+      }
+
+      .subtitle {
+        margin: 0 0 22px;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+        padding: 16px;
+        margin-bottom: 18px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--panel);
+        backdrop-filter: blur(12px);
+      }
+
+      .control-group {
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+      }
+
+      label {
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      button,
+      select,
+      input[type="file"] {
+        width: 100%;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 9px;
+        color: var(--text);
+        background: #292438;
+        padding: 10px 12px;
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+        transition:
+          transform 0.16s ease,
+          background 0.16s ease,
+          box-shadow 0.16s ease;
+      }
+
+      button:hover {
+        background: #423453;
+        box-shadow: 0 0 18px rgba(255, 153, 51, 0.25);
+        transform: translateY(-1px);
+      }
+
+      button.recording {
+        border-color: #ff4d4d;
+        background: #8f2020;
+        animation: pulse 1s infinite alternate;
+      }
+
+      @keyframes pulse {
+        from {
+          box-shadow: 0 0 4px rgba(255, 40, 40, 0.4);
+        }
+        to {
+          box-shadow: 0 0 20px rgba(255, 40, 40, 0.9);
+        }
+      }
+
+      input[type="range"] {
+        width: 100%;
+        accent-color: var(--accent);
+      }
+
+      .range-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .range-value {
+        min-width: 38px;
+        color: var(--accent);
+        font-size: 0.85rem;
+        text-align: right;
+      }
+
+      .toggle {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .toggle input {
+        width: 18px;
+        height: 18px;
+        accent-color: var(--accent);
+      }
+
+      .visualizer-wrap {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: #05050a;
+        box-shadow:
+          0 0 50px rgba(0, 0, 0, 0.75),
+          inset 0 0 70px rgba(255, 115, 0, 0.08);
+      }
+
+      #threeCanvas,
+      #fireCanvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      #fireCanvas {
+        pointer-events: none;
+        mix-blend-mode: screen;
+      }
+
+      .status {
+        margin-top: 14px;
+        color: var(--muted);
+        font-size: 0.9rem;
+        text-align: center;
+      }
+
+      .status strong {
+        color: var(--accent);
+      }
+
+      audio {
+        display: none;
+      }
+
+      .note-display {
+        position: absolute;
+        top: 18px;
+        right: 20px;
+        z-index: 3;
+        padding: 9px 12px;
+        border: 1px solid rgba(255, 210, 139, 0.3);
+        border-radius: 10px;
+        color: #ffe1a8;
+        background: rgba(0, 0, 0, 0.35);
+        font-size: 0.83rem;
+        backdrop-filter: blur(5px);
+      }
+
+      @media (max-width: 700px) {
+        .app {
+          width: min(100% - 20px, 1400px);
+        }
+
+        .visualizer-wrap {
+          aspect-ratio: 4 / 3;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <main class="app">
+      <h1>🎸🔥 String Fire Audio Visualizer</h1>
+      <p class="subtitle">
+        3D vibrating strings, pitch-aware lighting, sympathetic resonance, and
+        music-reactive fire.
+      </p>
+
+      <section class="controls">
+        <div class="control-group">
+          <label for="instrument">Instrument</label>
+          <select id="instrument">
+            <option value="guitar">Guitar — 6 Strings</option>
+            <option value="veena">Veena — Resonance Strings</option>
+            <option value="harp">Harp — 12 Strings</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label>Audio Input</label>
+          <button id="micButton">🎤 Use Microphone</button>
+        </div>
+
+        <div class="control-group">
+          <label for="audioFile">Audio File</label>
+          <input id="audioFile" type="file" accept="audio/*" />
+        </div>
+
+        <div class="control-group">
+          <label for="sensitivity">Sensitivity</label>
+          <div class="range-row">
+            <input
+              id="sensitivity"
+              type="range"
+              min="0.3"
+              max="3"
+              step="0.1"
+              value="1.2"
+            />
+            <span id="sensitivityValue" class="range-value">1.2</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label for="damping">String Damping</label>
+          <div class="range-row">
+            <input
+              id="damping"
+              type="range"
+              min="0.88"
+              max="0.995"
+              step="0.005"
+              value="0.96"
+            />
+            <span id="dampingValue" class="range-value">0.96</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label for="glow">Glow Intensity</label>
+          <div class="range-row">
+            <input
+              id="glow"
+              type="range"
+              min="0"
+              max="3"
+              step="0.1"
+              value="1.4"
+            />
+            <span id="glowValue" class="range-value">1.4</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label for="fireIntensity">Fire Intensity</label>
+          <div class="range-row">
+            <input
+              id="fireIntensity"
+              type="range"
+              min="0"
+              max="3"
+              step="0.1"
+              value="1.3"
+            />
+            <span id="fireIntensityValue" class="range-value">1.3</span>
+          </div>
+        </div>
+
+        <div class="control-group toggle">
+          <label for="fireEnabled">🔥 Enable Fire Effect</label>
+          <input id="fireEnabled" type="checkbox" checked />
+        </div>
+
+        <div class="control-group toggle">
+          <label for="pitchEnabled">🎵 Enable Pitch Detection</label>
+          <input id="pitchEnabled" type="checkbox" checked />
+        </div>
+
+        <div class="control-group">
+          <label>Export</label>
+          <button id="recordButton">⏺ Start Recording</button>
+        </div>
+      </section>
+
+      <section class="visualizer-wrap" id="visualizerWrap">
+        <canvas id="threeCanvas"></canvas>
+        <canvas id="fireCanvas"></canvas>
+        <div id="noteDisplay" class="note-display">Pitch: —</div>
+      </section>
+
+      <p class="status" id="status">
+        <strong>Status:</strong> Select microphone or upload an audio file.
+      </p>
+
+      <audio id="audioPlayer" controls></audio>
+    </main>
+
+    <script type="module">
+      import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js";
+      import { PitchDetector } from "https://cdn.jsdelivr.net/npm/pitchy@4.1.0/+esm";
+
+      // ==========================================================
+      // DOM REFERENCES
+      // ==========================================================
+      const threeCanvas = document.getElementById("threeCanvas");
+      const fireCanvas = document.getElementById("fireCanvas");
+      const fireCtx = fireCanvas.getContext("2d");
+      const visualizerWrap = document.getElementById("visualizerWrap");
+
+      const statusElement = document.getElementById("status");
+      const noteDisplay = document.getElementById("noteDisplay");
+      const micButton = document.getElementById("micButton");
+      const fileInput = document.getElementById("audioFile");
+      const audioPlayer = document.getElementById("audioPlayer");
+      const instrumentSelect = document.getElementById("instrument");
+      const recordButton = document.getElementById("recordButton");
+
+      const sensitivityInput = document.getElementById("sensitivity");
+      const dampingInput = document.getElementById("damping");
+      const glowInput = document.getElementById("glow");
+      const fireIntensityInput = document.getElementById("fireIntensity");
+      const fireEnabledInput = document.getElementById("fireEnabled");
+      const pitchEnabledInput = document.getElementById("pitchEnabled");
+
+      // ==========================================================
+      // CONFIGURATION
+      // ==========================================================
+      const settings = {
+        sensitivity: 1.2,
+        damping: 0.96,
+        glow: 1.4,
+        fireIntensity: 1.3,
+        fireEnabled: true,
+        pitchEnabled: true,
+      };
+
+      const instruments = {
+        guitar: {
+          resonance: false,
+          strings: [
+            { label: "E2", frequency: 82.41, color: 0xff4e50 },
+            { label: "A2", frequency: 110.0, color: 0xff8c42 },
+            { label: "D3", frequency: 146.83, color: 0xffd166 },
+            { label: "G3", frequency: 196.0, color: 0xa8e063 },
+            { label: "B3", frequency: 246.94, color: 0x55c1ff },
+            { label: "E4", frequency: 329.63, color: 0x857cff },
+          ],
+        },
+
+        veena: {
+          resonance: true,
+          strings: [
+            { label: "Sa", frequency: 130.81, color: 0xff5d4a },
+            { label: "Pa", frequency: 196.0, color: 0xffa24b },
+            { label: "Sa↑", frequency: 261.63, color: 0xffd166 },
+            { label: "Pa↑", frequency: 392.0, color: 0xffef9a55 },
+          ],
+        },
+
+        harp: {
+          resonance: false,
+          strings: Array.from({ length: 12 }, (_, index) => {
+            const frequency = 110 * Math.pow(2, index / 12);
+            const hue = index / 12;
+            const color = new THREE.Color().setHSL(hue, 0.82, 0.64).getHex();
+
+            return {
+              label: `H${index + 1}`,
+              frequency,
+              color,
+            };
+          }),
+        },
+      };
+
+      let currentInstrument = instruments.guitar;
+
+      // ==========================================================
+      // AUDIO SETUP
+      // ==========================================================
+      let audioContext = null;
+      let analyser = null;
+      let frequencyData = null;
+      let timeDomainData = null;
+      let pitchDetector = null;
+      let sourceNode = null;
+      let mediaStream = null;
+      let mediaElementConnected = false;
+
+      function initializeAudio() {
+        if (audioContext) return;
+
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 4096;
+        analyser.smoothingTimeConstant = 0.72;
+
+        frequencyData = new Uint8Array(analyser.frequencyBinCount);
+        timeDomainData = new Float32Array(analyser.fftSize);
+        pitchDetector = PitchDetector.forFloat32Array(analyser.fftSize);
+      }
+
+      async function resumeAudio() {
+        initializeAudio();
+
+        if (audioContext.state === "suspended") {
+          await audioContext.resume();
+        }
+      }
+
+      function disconnectSource() {
+        if (sourceNode) {
+          try {
+            sourceNode.disconnect();
+          } catch (_) {
+            // Safe to ignore an already disconnected source.
+          }
+          sourceNode = null;
+        }
+
+        if (mediaStream) {
+          mediaStream.getTracks().forEach((track) => track.stop());
+          mediaStream = null;
+        }
+      }
+
+      micButton.addEventListener("click", async () => {
+        try {
+          await resumeAudio();
+          disconnectSource();
+
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false,
+            },
+          });
+
+          sourceNode = audioContext.createMediaStreamSource(mediaStream);
+          sourceNode.connect(analyser);
+
+          statusElement.innerHTML =
+            "<strong>Status:</strong> 🎤 Listening through microphone.";
+        } catch (error) {
+          console.error(error);
+          statusElement.innerHTML =
+            "<strong>Status:</strong> Microphone permission was denied or unavailable.";
+        }
+      });
+
+      fileInput.addEventListener("change", async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        try {
+          await resumeAudio();
+          disconnectSource();
+
+          audioPlayer.src = URL.createObjectURL(file);
+          audioPlayer.style.display = "block";
+
+          if (!mediaElementConnected) {
+            sourceNode = audioContext.createMediaElementSource(audioPlayer);
+            sourceNode.connect(analyser);
+            analyser.connect(audioContext.destination);
+            mediaElementConnected = true;
+          }
+
+          await audioPlayer.play();
+
+          statusElement.innerHTML = `<strong>Status:</strong> ▶ Playing <em>${file.name}</em>`;
+        } catch (error) {
+          console.error(error);
+          statusElement.innerHTML =
+            "<strong>Status:</strong> Unable to play the selected audio file.";
+        }
+      });
+
+      // ==========================================================
+      // THREE.JS 3D SCENE
+      // ==========================================================
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x05050a, 0.075);
+
+      const camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.1, 100);
+      camera.position.set(0, 0.7, 13);
+
+      const renderer = new THREE.WebGLRenderer({
+        canvas: threeCanvas,
+        antialias: true,
+        alpha: true,
+        preserveDrawingBuffer: true,
+      });
+
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setClearColor(0x05050a, 1);
+
+      const ambientLight = new THREE.AmbientLight(0xffc68a, 0.4);
+      scene.add(ambientLight);
+
+      const warmLight = new THREE.PointLight(0xff7900, 2.4, 18);
+      warmLight.position.set(0, -4, 3);
+      scene.add(warmLight);
+
+      const coolLight = new THREE.PointLight(0x386bff, 1.1, 16);
+      coolLight.position.set(0, 4, 2);
+      scene.add(coolLight);
+
+      const starsGeometry = new THREE.BufferGeometry();
+      const starPositions = [];
+
+      for (let index = 0; index < 450; index++) {
+        starPositions.push(
+          (Math.random() - 0.5) * 25,
+          (Math.random() - 0.5) * 16,
+          -4 - Math.random() * 7,
+        );
+      }
+
+      starsGeometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(starPositions, 3),
+      );
+
+      const starsMaterial = new THREE.PointsMaterial({
+        color: 0xffd7a6,
+        size: 0.035,
+        transparent: true,
+        opacity: 0.5,
+      });
+
+      scene.add(new THREE.Points(starsGeometry, starsMaterial));
+
+      const stringGroup = new THREE.Group();
+      scene.add(stringGroup);
+
+      const bodyGeometry = new THREE.SphereGeometry(3.8, 48, 32);
+      const bodyMaterial = new THREE.MeshStandardMaterial({
+        color: 0x150c08,
+        roughness: 0.62,
+        metalness: 0.15,
+        emissive: 0x160600,
+        emissiveIntensity: 0.5,
+      });
+
+      const instrumentBody = new THREE.Mesh(bodyGeometry, bodyMaterial);
+      instrumentBody.scale.set(1.55, 0.48, 0.28);
+      instrumentBody.position.set(0, -0.25, -1.1);
+      scene.add(instrumentBody);
+
+      class VisualString {
+        constructor(config, yPosition, index, total, isResonance = false) {
+          this.config = config;
+          this.yPosition = yPosition;
+          this.index = index;
+          this.total = total;
+          this.isResonance = isResonance;
+
+          this.amplitude = 0;
+          this.targetAmplitude = 0;
+          this.phase = Math.random() * Math.PI * 2;
+          this.pitchBoost = 0;
+
+          this.segmentCount = 120;
+          this.length = 10.5;
+
+          const positions = new Float32Array((this.segmentCount + 1) * 3);
+          this.geometry = new THREE.BufferGeometry();
+          this.geometry.setAttribute(
+            "position",
+            new THREE.BufferAttribute(positions, 3),
+          );
+
+          const color = isResonance ? 0xffd89b : config.color;
+
+          this.material = new THREE.LineBasicMaterial({
+            color,
+            transparent: true,
+            opacity: isResonance ? 0.18 : 0.85,
+          });
+
+          this.line = new THREE.Line(this.geometry, this.material);
+          stringGroup.add(this.line);
+
+          this.updateGeometry(0);
+        }
+
+        trigger(value) {
+          this.targetAmplitude = Math.max(this.targetAmplitude, value);
+        }
+
+        update(delta, overallEnergy) {
+          this.targetAmplitude *= settings.damping;
+          this.amplitude += (this.targetAmplitude - this.amplitude) * 0.18;
+          this.amplitude *= 0.995;
+          this.pitchBoost *= 0.91;
+          this.phase += delta * (7 + this.index * 0.62 + overallEnergy * 8);
+
+          const brightness = Math.min(
+            1,
+            this.amplitude * 1.7 + this.pitchBoost * 0.7,
+          );
+
+          this.material.opacity = this.isResonance
+            ? 0.12 + brightness * 0.32
+            : 0.5 + brightness * 0.5;
+
+          this.material.color.setHex(
+            this.isResonance
+              ? 0xffd89b
+              : this.pitchBoost > 0.12
+                ? 0xffffff
+                : this.config.color,
+          );
+
+          this.updateGeometry(overallEnergy);
+        }
+
+        updateGeometry(overallEnergy) {
+          const positions = this.geometry.attributes.position.array;
+          const maxAmplitude = this.isResonance ? 0.14 : 0.48;
+          const amplitude = this.amplitude * maxAmplitude;
+
+          for (let point = 0; point <= this.segmentCount; point++) {
+            const progress = point / this.segmentCount;
+            const x = (progress - 0.5) * this.length;
+
+            // Fixed ends: vibration is zero at both endpoints.
+            const envelope = Math.sin(Math.PI * progress);
+
+            // Fundamental + harmonic waves create a string-like effect.
+            const wave =
+              Math.sin(this.phase + progress * Math.PI * 2.1) * 0.72 +
+              Math.sin(this.phase * 2.05 + progress * Math.PI * 5.3) * 0.2 +
+              Math.sin(this.phase * 3.2 + progress * Math.PI * 8.1) * 0.08;
+
+            const y = this.yPosition + envelope * wave * amplitude;
+            const z =
+              envelope *
+              Math.sin(this.phase * 0.75 + progress * 6.5) *
+              amplitude *
+              0.35;
+
+            const offset = point * 3;
+            positions[offset] = x;
+            positions[offset + 1] = y;
+            positions[offset + 2] = z;
+          }
+
+          this.geometry.attributes.position.needsUpdate = true;
+        }
+
+        dispose() {
+          stringGroup.remove(this.line);
+          this.geometry.dispose();
+          this.material.dispose();
+        }
+      }
+
+      let visualStrings = [];
+      let resonanceStrings = [];
+
+      function buildStrings() {
+        visualStrings.forEach((item) => item.dispose());
+        resonanceStrings.forEach((item) => item.dispose());
+
+        visualStrings = [];
+        resonanceStrings = [];
+
+        const sourceStrings = currentInstrument.strings;
+        const spacing = Math.min(1.22, 6.6 / Math.max(sourceStrings.length, 1));
+
+        sourceStrings.forEach((stringConfig, index) => {
+          const yPosition = ((sourceStrings.length - 1) / 2 - index) * spacing;
+
+          visualStrings.push(
+            new VisualString(
+              stringConfig,
+              yPosition,
+              index,
+              sourceStrings.length,
+              false,
+            ),
+          );
+        });
+
+        if (currentInstrument.resonance) {
+          for (let index = 0; index < 10; index++) {
+            const yPosition = 3.1 - index * 0.68;
+
+            resonanceStrings.push(
+              new VisualString(
+                {
+                  label: `R${index + 1}`,
+                  frequency: 120 + index * 35,
+                  color: 0xffd89b,
+                },
+                yPosition,
+                index,
+                10,
+                true,
+              ),
+            );
+          }
+        }
+      }
+
+      buildStrings();
+
+      // ==========================================================
+      // FIRE PARTICLE SYSTEM — CANVAS OVERLAY
+      // ==========================================================
+      const fireParticles = [];
+      let previousEnergy = 0;
+      let fireFlash = 0;
+
+      class FireParticle {
+        constructor(x, y, intensity, explosion = false) {
+          this.x = x;
+          this.y = y;
+
+          const direction = explosion
+            ? (Math.random() - 0.5) * Math.PI
+            : -Math.PI / 2 + (Math.random() - 0.5) * 0.7;
+
+          const speed = explosion
+            ? 4 + Math.random() * 10 * intensity
+            : 1 + Math.random() * 4 * intensity;
+
+          this.vx = Math.cos(direction) * speed;
+          this.vy = Math.sin(direction) * speed;
+
+          this.size = explosion
+            ? 3 + Math.random() * 8 * intensity
+            : 2 + Math.random() * 6 * intensity;
+
+          this.life = explosion ? 0.75 + Math.random() * 0.7 : 0.7 + Math.random() * 1.1;
+          this.maxLife = this.life;
+          this.gravity = explosion ? 0.1 : -0.015;
+          this.hue = explosion ? 18 + Math.random() * 35 : 20 + Math.random() * 35;
+        }
+
+        update() {
+          this.x += this.vx;
+          this.y += this.vy;
+          this.vx *= 0.985;
+          this.vy += this.gravity;
+          this.life -= 0.016;
+          this.size *= 0.992;
+        }
+
+        draw(context) {
+          const alpha = Math.max(0, this.life / this.maxLife);
+          const radius = Math.max(0.5, this.size * alpha);
+
+          const gradient = context.createRadialGradient(
+            this.x,
+            this.y,
+            0,
+            this.x,
+            this.y,
+            radius * 2.5,
+          );
+
+          gradient.addColorStop(0, `hsla(55, 100%, 92%, ${alpha})`);
+          gradient.addColorStop(0.25, `hsla(${this.hue + 25}, 100%, 62%, ${alpha})`);
+          gradient.addColorStop(0.65, `hsla(${this.hue}, 100%, 43%, ${alpha * 0.7})`);
+          gradient.addColorStop(1, `hsla(0, 100%, 20%, 0)`);
+
+          context.fillStyle = gradient;
+          context.beginPath();
+          context.arc(this.x, this.y, radius * 2.5, 0, Math.PI * 2);
+          context.fill();
+        }
+      }
+
+      function spawnFire(energy, explosion = false) {
+        if (!settings.fireEnabled) return;
+
+        const width = fireCanvas.width;
+        const height = fireCanvas.height;
+        const intensity = energy * settings.fireIntensity;
+
+        const particleCount = explosion
+          ? Math.floor(45 + intensity * 100)
+          : Math.floor(2 + intensity * 12);
+
+        for (let index = 0; index < particleCount; index++) {
+          const x = explosion
+            ? width * (0.25 + Math.random() * 0.5)
+            : width * (0.1 + Math.random() * 0.8);
+
+          const y = explosion
+            ? height * (0.35 + Math.random() * 0.35)
+            : height * (0.78 + Math.random() * 0.15);
+
+          fireParticles.push(new FireParticle(x, y, intensity, explosion));
+        }
+
+        if (explosion) {
+          fireFlash = 1;
+        }
+      }
+
+      function renderFire(energy) {
+        const width = fireCanvas.width;
+        const height = fireCanvas.height;
+
+        fireCtx.clearRect(0, 0, width, height);
+
+        if (!settings.fireEnabled) return;
+
+        // Base flame glow.
+        const baseGlow = Math.min(1, energy * settings.fireIntensity * 1.5);
+        const glowGradient = fireCtx.createRadialGradient(
+          width / 2,
+          height * 0.95,
+          5,
+          width / 2,
+          height * 0.95,
+          width * 0.48,
+        );
+
+        glowGradient.addColorStop(0, `rgba(255, 108, 0, ${baseGlow * 0.32})`);
+        glowGradient.addColorStop(0.38, `rgba(255, 42, 0, ${baseGlow * 0.14})`);
+        glowGradient.addColorStop(1, "rgba(255, 0, 0, 0)");
+
+        fireCtx.fillStyle = glowGradient;
+        fireCtx.fillRect(0, 0, width, height);
+
+        // Loudness explosion flash.
+        if (fireFlash > 0.01) {
+          fireCtx.fillStyle = `rgba(255, 185, 70, ${fireFlash * 0.25})`;
+          fireCtx.fillRect(0, 0, width, height);
+          fireFlash *= 0.87;
+        }
+
+        fireCtx.globalCompositeOperation = "lighter";
+
+        for (let index = fireParticles.length - 1; index >= 0; index--) {
+          const particle = fireParticles[index];
+          particle.update();
+          particle.draw(fireCtx);
+
+          if (particle.life <= 0 || particle.size < 0.25) {
+            fireParticles.splice(index, 1);
+          }
+        }
+
+        fireCtx.globalCompositeOperation = "source-over";
+      }
+
+      // ==========================================================
+      // AUDIO ANALYSIS AND PITCH DETECTION
+      // ==========================================================
+      function getFrequencyAmplitude(frequency) {
+        if (!audioContext || !analyser) return 0;
+
+        const nyquist = audioContext.sampleRate / 2;
+        const bin = Math.round(
+          (frequency / nyquist) * analyser.frequencyBinCount,
+        );
+
+        let total = 0;
+        let count = 0;
+
+        for (let offset = -3; offset <= 3; offset++) {
+          const targetBin = bin + offset;
+
+          if (targetBin >= 0 && targetBin < frequencyData.length) {
+            total += frequencyData[targetBin];
+            count++;
+          }
+        }
+
+        return count ? total / count / 255 : 0;
+      }
+
+      function getOverallEnergy() {
+        if (!frequencyData) return 0;
+
+        // Uses low-to-mid frequency bins for stable visible response.
+        const maxBin = Math.min(350, frequencyData.length);
+        let sum = 0;
+
+        for (let index = 0; index < maxBin; index++) {
+          sum += frequencyData[index];
+        }
+
+        return sum / maxBin / 255;
+      }
+
+      function closestStringIndex(detectedFrequency) {
+        let closestIndex = -1;
+        let smallestDifference = Infinity;
+
+        visualStrings.forEach((string, index) => {
+          const target = string.config.frequency;
+          const difference = Math.abs(1200 * Math.log2(detectedFrequency / target));
+
+          if (difference < smallestDifference) {
+            smallestDifference = difference;
+            closestIndex = index;
+          }
+        });
+
+        return smallestDifference < 180 ? closestIndex : -1;
+      }
+
+      function frequencyToNoteName(frequency) {
+        const noteNumber = Math.round(12 * Math.log2(frequency / 440) + 69);
+        const noteNames = [
+          "C",
+          "C♯",
+          "D",
+          "D♯",
+          "E",
+          "F",
+          "F♯",
+          "G",
+          "G♯",
+          "A",
+          "A♯",
+          "B",
+        ];
+
+        const name = noteNames[noteNumber % 12];
+        const octave = Math.floor(noteNumber / 12) - 1;
+
+        return `${name}${octave}`;
+      }
+
+      function detectPitch() {
+        if (
+          !settings.pitchEnabled ||
+          !audioContext ||
+          !analyser ||
+          !pitchDetector
+        ) {
+          noteDisplay.textContent = "Pitch: —";
+          return;
+        }
+
+        analyser.getFloatTimeDomainData(timeDomainData);
+
+        const [pitch, clarity] = pitchDetector.findPitch(
+          timeDomainData,
+          audioContext.sampleRate,
+        );
+
+        if (clarity > 0.88 && pitch > 55 && pitch < 1600) {
+          const index = closestStringIndex(pitch);
+          const noteName = frequencyToNoteName(pitch);
+
+          noteDisplay.textContent = `Pitch: ${noteName} · ${Math.round(
+            pitch,
+          )} Hz`;
+
+          if (index >= 0) {
+            visualStrings[index].pitchBoost = 1;
+            visualStrings[index].trigger(0.7);
+          }
+        } else {
+          noteDisplay.textContent = "Pitch: listening…";
+        }
+      }
+
+      // ==========================================================
+      // RECORDING / EXPORT
+      // ==========================================================
+      const exportCanvas = document.createElement("canvas");
+      const exportContext = exportCanvas.getContext("2d");
+
+      let mediaRecorder = null;
+      let recordedChunks = [];
+      let isRecording = false;
+
+      function compositeFramesForExport() {
+        exportCanvas.width = threeCanvas.width;
+        exportCanvas.height = threeCanvas.height;
+
+        exportContext.clearRect(0, 0, exportCanvas.width, exportCanvas.height);
+        exportContext.drawImage(threeCanvas, 0, 0);
+        exportContext.drawImage(fireCanvas, 0, 0);
+      }
+
+      recordButton.addEventListener("click", () => {
+        if (isRecording) {
+          mediaRecorder.stop();
+          return;
+        }
+
+        compositeFramesForExport();
+
+        const stream = exportCanvas.captureStream(60);
+
+        mediaRecorder = new MediaRecorder(stream, {
+          mimeType: "video/webm;codecs=vp9",
+          videoBitsPerSecond: 8_000_000,
+        });
+
+        recordedChunks = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            recordedChunks.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(recordedChunks, { type: "video/webm" });
+          const url = URL.createObjectURL(blob);
+
+          const downloadLink = document.createElement("a");
+          downloadLink.href = url;
+          downloadLink.download = `string-fire-visualizer-${Date.now()}.webm`;
+          downloadLink.click();
+
+          URL.revokeObjectURL(url);
+
+          isRecording = false;
+          recordButton.classList.remove("recording");
+          recordButton.textContent = "⏺ Start Recording";
+
+          statusElement.innerHTML =
+            "<strong>Status:</strong> Recording exported as a WebM file.";
+        };
+
+        mediaRecorder.start();
+        isRecording = true;
+
+        recordButton.classList.add("recording");
+        recordButton.textContent = "⏹ Stop & Download";
+
+        statusElement.innerHTML =
+          "<strong>Status:</strong> 🔴 Recording visual output...";
+      });
+
+      // ==========================================================
+      // UI CONTROLS
+      // ==========================================================
+      function bindRange(input, valueElementId, settingName) {
+        const valueElement = document.getElementById(valueElementId);
+
+        input.addEventListener("input", () => {
+          settings[settingName] = Number(input.value);
+          valueElement.textContent = input.value;
+        });
+      }
+
+      bindRange(sensitivityInput, "sensitivityValue", "sensitivity");
+      bindRange(dampingInput, "dampingValue", "damping");
+      bindRange(glowInput, "glowValue", "glow");
+      bindRange(fireIntensityInput, "fireIntensityValue", "fireIntensity");
+
+      fireEnabledInput.addEventListener("change", () => {
+        settings.fireEnabled = fireEnabledInput.checked;
+      });
+
+      pitchEnabledInput.addEventListener("change", () => {
+        settings.pitchEnabled = pitchEnabledInput.checked;
+      });
+
+      instrumentSelect.addEventListener("change", () => {
+        currentInstrument = instruments[instrumentSelect.value];
+        buildStrings();
+
+        statusElement.innerHTML = `<strong>Status:</strong> Switched to ${instrumentSelect.options[instrumentSelect.selectedIndex].text}.`;
+      });
+
+      // ==========================================================
+      // RESIZING
+      // ==========================================================
+      function resize() {
+        const width = visualizerWrap.clientWidth;
+        const height = visualizerWrap.clientHeight;
+
+        renderer.setSize(width, height, false);
+
+        fireCanvas.width = Math.floor(width * Math.min(devicePixelRatio, 2));
+        fireCanvas.height = Math.floor(height * Math.min(devicePixelRatio, 2));
+
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+      }
+
+      window.addEventListener("resize", resize);
+      resize();
+
+      // ==========================================================
+      // MAIN ANIMATION LOOP
+      // ==========================================================
+      const clock = new THREE.Clock();
+
+      function animate() {
+        requestAnimationFrame(animate);
+
+        const delta = Math.min(clock.getDelta(), 0.05);
+
+        if (analyser) {
+          analyser.getByteFrequencyData(frequencyData);
+        }
+
+        const overallEnergy = getOverallEnergy() * settings.sensitivity;
+
+        visualStrings.forEach((string) => {
+          const frequencyEnergy =
+            getFrequencyAmplitude(string.config.frequency) *
+            settings.sensitivity;
+
+          if (frequencyEnergy > 0.04) {
+            string.trigger(frequencyEnergy);
+          }
+
+          string.update(delta, overallEnergy);
+        });
+
+        // Veena / sitar sympathetic string behavior.
+        if (currentInstrument.resonance) {
+          resonanceStrings.forEach((string, index) => {
+            const mainString =
+              visualStrings[index % visualStrings.length];
+
+            const resonanceEnergy =
+              mainString.amplitude * (0.18 + (index % 3) * 0.05);
+
+            if (resonanceEnergy > 0.025) {
+              string.trigger(resonanceEnergy);
+            }
+
+            string.update(delta, overallEnergy);
+          });
+        }
+
+        detectPitch();
+
+        // Fire continuously reflects volume.
+        if (settings.fireEnabled && overallEnergy > 0.03) {
+          spawnFire(overallEnergy, false);
+        }
+
+        // Detect sudden energy increase = beat/transient explosion.
+        const energyRise = overallEnergy - previousEnergy;
+
+        if (
+          settings.fireEnabled &&
+          overallEnergy > 0.36 &&
+          energyRise > 0.08
+        ) {
+          spawnFire(overallEnergy, true);
+        }
+
+        previousEnergy += (overallEnergy - previousEnergy) * 0.12;
+
+        // Music changes the scene lighting and instrument body glow.
+        warmLight.intensity = 1.1 + overallEnergy * 7.5 * settings.glow;
+        instrumentBody.material.emissiveIntensity =
+          0.3 + overallEnergy * 1.6 * settings.glow;
+
+        // Gentle 3D camera/instrument movement.
+        stringGroup.rotation.y = Math.sin(performance.now() * 0.00022) * 0.16;
+        stringGroup.rotation.x = Math.sin(performance.now() * 0.00017) * 0.025;
+        instrumentBody.rotation.y = stringGroup.rotation.y * 0.45;
+
+        renderer.render(scene, camera);
+        renderFire(overallEnergy);
+
+        if (isRecording) {
+          compositeFramesForExport();
+        }
+      }
+
+      animate();
+    </script>
+  </body>
+</html>

@@ -7,7 +7,41 @@ import {
   cameraCrop,
   interpolateTrack,
 } from "../src/lib/motion.ts";
-import { BeatTracker, logBands } from "../src/lib/audio-features.ts";
+import {
+  BeatTracker,
+  logBands,
+  silentFeatures,
+} from "../src/lib/audio-features.ts";
+import {
+  instrumentStrings,
+  stringDisplacement,
+  stringLevel,
+} from "../src/lib/strings.ts";
+
+test("string frequencies follow the corresponding logarithmic audio bands", () => {
+  const audio = silentFeatures();
+  const position = Math.round(
+    (Math.log(196 / 32) / Math.log(16000 / 32)) * audio.bands.length - 0.5,
+  );
+  audio.bands[position] = 1;
+  assert.ok(stringLevel(audio, 196) > 0.5);
+  assert.equal(stringLevel(audio, 330), 0);
+  assert.equal(stringLevel(audio, 20000), 0);
+  audio.sampleRate = 16000;
+  assert.equal(stringLevel(audio, 9000), 0);
+});
+
+test("instrument strings stay anchored and can vibrate between their endpoints", () => {
+  assert.deepEqual(
+    Object.values(instrumentStrings).map((notes) => notes.length),
+    [6, 4, 12],
+  );
+  for (const phase of [0, 1, 2]) {
+    assert.equal(stringDisplacement(0, phase), 0);
+    assert.equal(stringDisplacement(1, phase), 0);
+  }
+  assert.notEqual(stringDisplacement(0.5, 0), stringDisplacement(0.5, 1));
+});
 
 function spectrum(bass: number, rest = 60): Uint8Array {
   const data = new Uint8Array(512).fill(rest);

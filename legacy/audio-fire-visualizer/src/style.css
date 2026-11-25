@@ -1,0 +1,193 @@
+:root {
+  color: #fff6eb;
+  background: #070507;
+  font-family:
+    Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 50% 0%, #3c1708 0%, transparent 35%),
+    radial-gradient(circle at 50% 100%, #16101d 0%, transparent 50%),
+    #070507;
+}
+
+button,
+select,
+input {
+  font: inherit;
+}
+
+.app-shell {
+  width: min(1400px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 28px 0 42px;
+}
+
+.header {
+  margin-bottom: 22px;
+  text-align: center;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: clamp(1.6rem, 4vw, 2.8rem);
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-shadow:
+    0 0 12px rgba(255, 98, 0, 0.9),
+    0 0 32px rgba(255, 64, 0, 0.45);
+}
+
+.header p {
+  margin: 10px 0 0;
+  color: #d7b9a0;
+}
+
+.control-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid rgba(255, 152, 61, 0.25);
+  border-radius: 16px;
+  background: rgba(25, 12, 10, 0.82);
+  box-shadow: inset 0 0 35px rgba(255, 70, 0, 0.04);
+  backdrop-filter: blur(10px);
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.control-group label {
+  color: #ffc38b;
+  font-size: 0.85rem;
+}
+
+select,
+input[type="file"],
+button {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid rgba(255, 206, 151, 0.25);
+  border-radius: 9px;
+  color: #fff8ef;
+  background: #2a1b1a;
+}
+
+button {
+  cursor: pointer;
+  background: linear-gradient(135deg, #68230c, #9a410b);
+  transition:
+    transform 150ms ease,
+    filter 150ms ease,
+    box-shadow 150ms ease;
+}
+
+button:hover {
+  filter: brightness(1.16);
+  box-shadow: 0 0 18px rgba(255, 86, 0, 0.45);
+  transform: translateY(-1px);
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: #ff7600;
+  cursor: pointer;
+}
+
+.visualizer-container {
+  position: relative;
+  width: 100%;
+  min-height: 420px;
+  aspect-ratio: 16 / 8.5;
+  overflow: hidden;
+  border: 1px solid rgba(255, 137, 35, 0.26);
+  border-radius: 20px;
+  background:
+    radial-gradient(ellipse at 50% 100%, #54200a 0%, #1e0b07 26%, #08070b 76%);
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.56),
+    inset 0 -40px 80px rgba(255, 61, 0, 0.2);
+}
+
+#fireCanvas,
+#bloomCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+#bloomCanvas {
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: 0.92;
+}
+
+.hud {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 2;
+  display: grid;
+  gap: 8px;
+  min-width: 145px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 219, 174, 0.28);
+  border-radius: 10px;
+  color: #ffe2b8;
+  background: rgba(0, 0, 0, 0.32);
+  font-size: 0.84rem;
+  backdrop-filter: blur(7px);
+}
+
+#audioPlayer {
+  display: none;
+  width: 100%;
+  margin-top: 16px;
+}
+
+.status {
+  margin: 14px 0 0;
+  color: #d2b8a3;
+  text-align: center;
+}
+
+.status strong {
+  color: #ffb26b;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 14px;
+  color: #d6b9a2;
+  font-size: 0.84rem;
+}
+
+@media (max-width: 650px) {
+  .app-shell {
+    width: min(100% - 20px, 1400px);
+    padding-top: 18px;
+  }
+
+  .visualizer-container {
+    min-height: 360px;
+    aspect-ratio: 4 / 5;
+  }
+}

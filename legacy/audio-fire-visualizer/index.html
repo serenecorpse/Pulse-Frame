@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>Audio-Reactive Fire Visualizer</title>
+  </head>
+
+  <body>
+    <main class="app-shell">
+      <header class="header">
+        <h1>🔥 Audio-Reactive Fire Visualizer</h1>
+        <p>
+          Music-controlled 3D fire with pitch colors, bloom, and beat
+          explosions.
+        </p>
+      </header>
+
+      <section class="control-panel">
+        <div class="control-group">
+          <label for="presetSelect">🎺 Music preset</label>
+          <select id="presetSelect">
+            <option value="edm">Bass-heavy EDM</option>
+            <option value="vocal">Vocal / Singing</option>
+            <option value="acoustic">Acoustic Guitar</option>
+            <option value="indian">Veena / Indian Classical</option>
+            <option value="balanced" selected>Balanced</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label>🎤 Microphone</label>
+          <button id="micButton" type="button">Use Microphone</button>
+        </div>
+
+        <div class="control-group">
+          <label for="audioFile">🎵 Audio file</label>
+          <input id="audioFile" type="file" accept="audio/*" />
+        </div>
+
+        <div class="control-group">
+          <label for="fireIntensity">
+            🔥 Fire intensity:
+            <span id="fireIntensityValue">1.2</span>
+          </label>
+          <input
+            id="fireIntensity"
+            type="range"
+            min="0"
+            max="3"
+            value="1.2"
+            step="0.1"
+          />
+        </div>
+
+        <div class="control-group">
+          <label for="bloomStrength">
+            ✨ Bloom strength:
+            <span id="bloomStrengthValue">1.4</span>
+          </label>
+          <input
+            id="bloomStrength"
+            type="range"
+            min="0"
+            max="3"
+            value="1.4"
+            step="0.1"
+          />
+        </div>
+
+        <div class="control-group">
+          <label for="sensitivity">
+            🔊 Sensitivity:
+            <span id="sensitivityValue">1.0</span>
+          </label>
+          <input
+            id="sensitivity"
+            type="range"
+            min="0.3"
+            max="3"
+            value="1"
+            step="0.1"
+          />
+        </div>
+      </section>
+
+      <section id="visualizerContainer" class="visualizer-container">
+        <canvas id="fireCanvas"></canvas>
+        <canvas id="bloomCanvas"></canvas>
+
+        <div class="hud">
+          <div id="pitchInfo">Pitch: —</div>
+          <div id="energyInfo">Energy: 0%</div>
+        </div>
+      </section>
+
+      <audio id="audioPlayer" controls></audio>
+
+      <p id="status" class="status">
+        <strong>Status:</strong> Upload audio or use the microphone.
+      </p>
+
+      <section class="legend">
+        <span>🔴 Low pitch: red / orange</span>
+        <span>🟡 Mid pitch: gold</span>
+        <span>🔵 High pitch: blue / white</span>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>🔥 Audio-Reactive Fire Visualizer</title>
+<style>
+  body {
+    margin: 0;
+    background: #000;
+    font-family: 'Segoe UI', sans-serif;
+    color: #eee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  h1 {
+    margin-top: 18px;
+    font-weight: 300;
+    letter-spacing: 2px;
+    text-shadow: 0 0 20px rgba(255, 100, 0, 0.7);
+  }
+
+  .controls {
+    display: flex;
+    gap: 15px;
+    margin: 10px 0 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  button, input[type="file"], select {
+    background: #221812;
+    color: #eee;
+    border: 1px solid #553322;
+    padding: 10px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: 0.2s;
+  }
+
+  button:hover {
+    background: #3a241a;
+    box-shadow: 0 0 10px rgba(255, 120, 0, 0.5);
+  }
+
+  canvas {
+    background: #000;
+    border-radius: 12px;
+    box-shadow: 0 0 60px rgba(255, 80, 0, 0.15);
+    border: 1px solid #2a1a12;
+  }
+
+  .status {
+    margin-top: 10px;
+    font-size: 13px;
+    color: #bb9;
+  }
+
+  .sliders {
+    display: flex;
+    gap: 25px;
+    margin-top: 15px;
+    font-size: 12px;
+    color: #ccc;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .sliders label { display:flex; flex-direction:column; align-items:center; gap:4px; }
+</style>
+</head>
+<body>
+
+<h1>🔥 Audio-Reactive Fire Visualizer</h1>
+
+<div class="controls">
+  <button id="micBtn">🎤 Use Microphone</button>
+  <input type="file" id="fileInput" accept="audio/*" />
+</div>
+
+<canvas id="fireCanvas" width="900" height="520"></canvas>
+
+<div class="status" id="status">Status: Idle — select an input source above</div>
+
+<div class="sliders">
+  <label>Sensitivity
+    <input type="range" id="sensitivity" min="0.5" max="3" step="0.1" value="1.3" />
+  </label>
+  <label>Explosion Threshold
+    <input type="range" id="threshold" min="0.4" max="0.95" step="0.01" value="0.68" />
+  </label>
+  <label>Flame Height
+    <input type="range" id="heightMul" min="0.5" max="2" step="0.1" value="1" />
+  </label>
+</div>
+
+<audio id="audioPlayer" controls style="margin-top:15px; display:none;"></audio>
+
+<script>
+// ============================================================
+// AUDIO SETUP
+// ============================================================
+let audioContext, analyser, freqData, timeData, source;
+const canvas = document.getElementById('fireCanvas');
+const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+const audioPlayer = document.getElementById('audioPlayer');
+
+const sensitivitySlider = document.getElementById('sensitivity');
+const thresholdSlider = document.getElementById('threshold');
+const heightSlider = document.getElementById('heightMul');
+
+function initAudioContext() {
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.75;
+    freqData = new Uint8Array(analyser.frequencyBinCount);
+    timeData = new Uint8Array(analyser.fftSize);
+  }
+}
+
+document.getElementById('micBtn').addEventListener('click', async () => {
+  initAudioContext();
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (source) source.disconnect();
+    source = audioContext.createMediaStreamSource(stream);
+    source.connect(analyser);
+    statusEl.textContent = 'Status: 🎤 Listening to microphone...';
+  } catch (err) {
+    statusEl.textContent = 'Status: Microphone access denied.';
+  }
+});
+
+document.getElementById('fileInput').addEventListener('change', (e) => {
+  initAudioContext();
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const url = URL.createObjectURL(file);
+  audioPlayer.src = url;
+  audioPlayer.style.display = 'block';
+  audioPlayer.play();
+
+  if (source) source.disconnect();
+  source = audioContext.createMediaElementSource(audioPlayer);
+  source.connect(analyser);
+  analyser.connect(audioContext.destination);
+
+  statusEl.textContent = `Status: ▶ Playing "${file.name}"`;
+});
+
+// ============================================================
+// FREQUENCY BAND HELPERS
+// ============================================================
+function bandAverage(data, loFreq, hiFreq) {
+  if (!audioContext) return 0;
+  const nyquist = audioContext.sampleRate / 2;
+  const loIdx = Math.floor((loFreq / nyquist) * data.length);
+  const hiIdx = Math.ceil((hiFreq / nyquist) * data.length);
+  let sum = 0, count = 0;
+  for (let i = loIdx; i <= hiIdx && i < data.length; i++) {
+    sum += data[i];
+    count++;
+  }
+  return count ? (sum / count) / 255 : 0;
+}
+
+function getRMSVolume(data) {
+  let sumSquares = 0;
+  for (let i = 0; i < data.length; i++) {
+    const v = (data[i] - 128) / 128;
+    sumSquares += v * v;
+  }
+  return Math.sqrt(sumSquares / data.length); // 0..~1
+}
+
+// ============================================================
+// PARTICLE SYSTEM
+// ============================================================
+let particles = [];
+let embers = [];
+let shockwaves = [];
+let flashAlpha = 0;
+
+const W = canvas.width;
+const H = canvas.height;
+const baseY = H - 20;
+
+function heatColor(t) {
+  // t: 0 (coolest/edge) -> 1 (hottest/core)
+  // Dark red -> orange -> yellow -> white
+  if (t < 0.25) {
+    const k = t / 0.25;
+    return `rgb(${Math.floor(80 + k * 100)},${Math.floor(10 + k * 30)},0)`;
+  } else if (t < 0.55) {
+    const k = (t - 0.25) / 0.3;
+    return `rgb(${Math.floor(180 + k * 60)},${Math.floor(40 + k * 100)},0)`;
+  } else if (t < 0.8) {
+    const k = (t - 0.55) / 0.25;
+    return `rgb(255,${Math.floor(140 + k * 100)},${Math.floor(k * 60)})`;
+  } else {
+    const k = (t - 0.8) / 0.2;
+    return `rgb(255,${Math.floor(240 + k * 15)},${Math.floor(60 + k * 180)})`;
+  }
+}
+
+class FireParticle {
+  constructor(x, y, speedMul = 1, sizeMul = 1) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 1.2;
+    this.vy = -(2 + Math.random() * 2.5) * speedMul;
+    this.life = 1;
+    this.decay = 0.012 + Math.random() * 0.018;
+    this.size = (14 + Math.random() * 14) * sizeMul;
+    this.wobble = Math.random() * Math.PI * 2;
+  }
+
+  update(turbulence) {
+    this.wobble += 0.15;
+    this.vx += Math.sin(this.wobble) * 0.05 * turbulence;
+    this.vy *= 0.994; // slight upward deceleration (buoyancy settle)
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life -= this.decay;
+    this.size *= 0.985;
+  }
+
+  draw() {
+    if (this.life <= 0 || this.size <= 0.5) return;
+    const heat = Math.max(0, Math.min(1, this.life));
+    const color = heatColor(heat);
+    const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.size);
+    grad.addColorStop(0, color);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  get dead() {
+    return this.life <= 0 || this.size <= 0.5;
+  }
+}
+
+class Spark {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 3;
+    this.vy = -(4 + Math.random() * 5);
+    this.life = 1;
+    this.decay = 0.02 + Math.random() * 0.02;
+  }
+  update() {
+    this.vy += 0.08; // gravity pulls sparks back down
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life -= this.decay;
+  }
+  draw() {
+    if (this.life <= 0) return;
+    ctx.fillStyle = `rgba(255,${200 + Math.random()*55|0},120,${this.life})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  get dead() { return this.life <= 0; }
+}
+
+class Shockwave {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.radius = 10;
+    this.maxRadius = 260 + Math.random() * 60;
+    this.alpha = 0.9;
+  }
+  update() {
+    this.radius += 9;
+    this.alpha = Math.max(0, 1 - this.radius / this.maxRadius);
+  }
+  draw() {
+    ctx.strokeStyle = `rgba(255,180,80,${this.alpha})`;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.ellipse(this.x, this.y, this.radius, this.radius * 0.35, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  get dead() { return this.alpha <= 0; }
+}
+
+// ============================================================
+// EXPLOSION DETECTION (sustained loudness)
+// ============================================================
+let sustainCounter = 0;
+let explosionCooldown = 0;
+const SUSTAIN_FRAMES_NEEDED = 18; // ~0.3s at 60fps
+const COOLDOWN_FRAMES = 90; // ~1.5s before another explosion can trigger
+
+function triggerExplosion(intensity) {
+  const cx = W / 2 + (Math.random() - 0.5) * 100;
+  const cy = baseY - 80;
+
+  // Burst of radiating particles
+  const burstCount = 60 + Math.floor(intensity * 80);
+  for (let i = 0; i < burstCount; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 3 + Math.random() * 7 * intensity;
+    const p = new FireParticle(cx, cy, 1, 1.4);
+    p.vx = Math.cos(angle) * speed;
+    p.vy = Math.sin(angle) * speed * 0.7 - 2;
+    p.decay = 0.018 + Math.random() * 0.02;
+    particles.push(p);
+  }
+
+  // Sparks flying outward
+  for (let i = 0; i < 40; i++) {
+    embers.push(new Spark(cx + (Math.random()-0.5)*60, cy));
+  }
+
+  shockwaves.push(new Shockwave(cx, cy));
+  flashAlpha = Math.min(1, 0.5 + intensity * 0.5);
+}
+
+// ============================================================
+// MAIN ANIMATION LOOP
+// ============================================================
+function animate() {
+  requestAnimationFrame(animate);
+
+  // Trail/fade effect
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.fillRect(0, 0, W, H);
+
+  let bass = 0, mid = 0, treble = 0, volume = 0;
+
+  if (analyser) {
+    analyser.getByteFrequencyData(freqData);
+    analyser.getByteTimeDomainData(timeData);
+
+    const sensitivity = parseFloat(sensitivitySlider.value);
+    bass = Math.min(1, bandAverage(freqData, 20, 200) * sensitivity);
+    mid = Math.min(1, bandAverage(freqData, 200, 2000) * sensitivity);
+    treble = Math.min(1, bandAverage(freqData, 2000, 9000) * sensitivity);
+    volume = Math.min(1, getRMSVolume(timeData) * sensitivity * 1.8);
+  }
+
+  const heightMul = parseFloat(heightSlider.value);
+  const threshold = parseFloat(thresholdSlider.value);
+
+  // --- Spawn base fire particles ---
+  const baseCount = 3 + Math.floor(bass * 14);
+  const spread = 60 + mid * 160;
+  for (let i = 0; i < baseCount; i++) {
+    const x = W / 2 + (Math.random() - 0.5) * spread;
+    const p = new FireParticle(x, baseY, 1 + mid * 1.5 * heightMul, 1 + bass * 0.6);
+    particles.push(p);
+  }
+
+  // --- Sparks from treble ---
+  if (treble > 0.35 && Math.random() < treble) {
+    const x = W / 2 + (Math.random() - 0.5) * spread;
+    embers.push(new Spark(x, baseY - 40 - Math.random() * 60));
+  }
+
+  // --- Explosion detection ---
+  if (volume > threshold) {
+    sustainCounter++;
+  } else {
+    sustainCounter = Math.max(0, sustainCounter - 2);
+  }
+
+  if (explosionCooldown > 0) explosionCooldown--;
+
+  if (sustainCounter >= SUSTAIN_FRAMES_NEEDED && explosionCooldown <= 0) {
+    triggerExplosion(volume);
+    explosionCooldown = COOLDOWN_FRAMES;
+    sustainCounter = 0;
+  }
+
+  // --- Update & draw particles (additive blending for glow) ---
+  ctx.globalCompositeOperation = 'lighter';
+
+  const turbulence = 1 + treble * 2;
+  particles.forEach(p => { p.update(turbulence); p.draw(); });
+  particles = particles.filter(p => !p.dead);
+
+  embers.forEach(s => { s.update(); s.draw(); });
+  embers = embers.filter(s => !s.dead);
+
+  shockwaves.forEach(sw => { sw.update(); sw.draw(); });
+  shockwaves = shockwaves.filter(sw => !sw.dead);
+
+  ctx.globalCompositeOperation = 'source-over';
+
+  // --- Overall brightness pulse (glow halo based on volume) ---
+  const glowRadius = 150 + volume * 250;
+  const glow = ctx.createRadialGradient(W/2, baseY - 60, 20, W/2, baseY - 60, glowRadius);
+  glow.addColorStop(0, `rgba(255,140,40,${0.08 + volume * 0.12})`);
+  glow.addColorStop(1, 'rgba(255,140,40,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  // --- Explosion flash overlay ---
+  if (flashAlpha > 0) {
+    ctx.fillStyle = `rgba(255,220,150,${flashAlpha})`;
+    ctx.fillRect(0, 0, W, H);
+    flashAlpha -= 0.04;
+  }
+
+  // --- Base ember glow line ---
+  ctx.fillStyle = `rgba(255,100,0,${0.3 + bass * 0.5})`;
+  ctx.fillRect(0, baseY, W, 4);
+}
+
+animate();
+</script>
+</body>
+</html>

@@ -177,6 +177,187 @@ function kickTrack(seconds = 4, rate = 48000): Buffer {
   return buffer;
 }
 
+test("string visualizer reacts to audio and retains its instrument after reload", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const tone = kickTrack(5);
+  for (let i = 0; i < 5 * 48000; i++)
+    tone.writeInt16LE(
+      Math.round(Math.sin((2 * Math.PI * 196 * i) / 48000) * 0.7 * 32767),
+      44 + i * 2,
+    );
+  await page.locator('input[accept^="audio/"]').setInputFiles({
+    name: "tone.wav",
+    mimeType: "audio/wav",
+    buffer: tone,
+  });
+  await expect(page.getByText("1 assets in this session")).toBeVisible();
+  await page.getByRole("button", { name: "✳ Effects" }).click();
+  await page.getByRole("button", { name: "Strings", exact: true }).click();
+  await expect(page.getByLabel("Instrument")).toHaveValue("guitar");
+  await page.waitForTimeout(100);
+  const idle = await page.evaluate(() => {
+    const canvas = document.querySelector<HTMLCanvasElement>(
+      ".preview-stage canvas",
+    )!;
+    return Array.from(
+      canvas.getContext("2d")!.getImageData(400, 200, 400, 320).data,
+    );
+  });
+  await page.locator(".play-button").click();
+  await expect
+    .poll(
+      async () =>
+        page.evaluate((baseline) => {
+          const canvas = document.querySelector<HTMLCanvasElement>(
+            ".preview-stage canvas",
+          )!;
+          const pixels = canvas
+            .getContext("2d")!
+            .getImageData(400, 200, 400, 320).data;
+          let changed = 0;
+          for (let i = 0; i < pixels.length; i += 4)
+            if (
+              Math.abs(pixels[i] - baseline[i]) +
+                Math.abs(pixels[i + 1] - baseline[i + 1]) +
+                Math.abs(pixels[i + 2] - baseline[i + 2]) >
+              50
+            )
+              changed++;
+          return changed;
+        }, idle),
+      { timeout: 5000 },
+    )
+    .toBeGreaterThan(100);
+  await page.locator(".play-button").click();
+  await page.getByLabel("Instrument").selectOption("veena");
+  await page.getByLabel("Instrument").selectOption("harp");
+  for (const [aspect, width, height] of [
+    ["16:9", 1280, 720],
+    ["9:16", 720, 1280],
+    ["1:1", 900, 900],
+  ] as const) {
+    await page.getByLabel("Canvas aspect ratio").selectOption(aspect);
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const canvas = document.querySelector<HTMLCanvasElement>(
+            ".preview-stage canvas",
+          )!;
+          return [canvas.width, canvas.height];
+        }),
+      )
+      .toEqual([width, height]);
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const canvas = document.querySelector<HTMLCanvasElement>(
+            ".preview-stage canvas",
+          )!;
+          const { width, height } = canvas,
+            data = canvas
+              .getContext("2d")!
+              .getImageData(0, 0, width, height).data;
+          let left = width,
+            right = 0,
+            top = height,
+            bottom = 0,
+            count = 0;
+          for (let y = 0; y < height; y += 2)
+            for (let x = 0; x < width; x += 2) {
+              const i = (y * width + x) * 4;
+              if (Math.max(data[i], data[i + 1], data[i + 2]) > 120) {
+                left = Math.min(left, x);
+                right = Math.max(right, x);
+                top = Math.min(top, y);
+                bottom = Math.max(bottom, y);
+                count++;
+              }
+            }
+          return (
+            count > 100 &&
+            left > width * 0.02 &&
+            right < width * 0.98 &&
+            top > height * 0.02 &&
+            bottom < height * 0.98
+          );
+        }),
+      )
+      .toBe(true);
+  }
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          JSON.parse(
+            localStorage.getItem("pulseframe-project") || "{}",
+          ).clips?.find(
+            (clip: { effect?: string }) => clip.effect === "strings",
+          )?.stringInstrument,
+      ),
+    )
+    .toBe("harp");
+  await page.reload();
+  await page.locator(".clip-visualizer").click();
+  await expect(page.getByLabel("Instrument")).toHaveValue("harp");
+  await expect(page.getByText("Preview failed", { exact: false })).toHaveCount(
+    0,
+  );
+});
+
+test("string visualizer is present in exported video", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "✳ Effects" }).click();
+  await page.getByRole("button", { name: "Strings", exact: true }).click();
+  await page.getByRole("spinbutton", { name: "Duration" }).fill("1");
+  await page.getByRole("button", { name: "↗ Export video" }).click();
+  const dialog = page.getByRole("dialog", { name: "Export your video" });
+  await dialog.getByLabel("Resolution").selectOption("720");
+  const download = page.waitForEvent("download", { timeout: 35000 });
+  await dialog.getByRole("button", { name: "Start export" }).click();
+  const file = await download;
+  const bytes = await readFile(await file.path());
+  const redPixels = await page.evaluate(
+    async ({ base64, type }) => {
+      const data = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([data], { type }));
+      try {
+        const video = document.createElement("video");
+        video.src = url;
+        await new Promise<void>((resolve, reject) => {
+          video.onloadeddata = () => resolve();
+          video.onerror = () => reject(new Error("Cannot decode export"));
+        });
+        video.currentTime = 0.5;
+        await new Promise<void>((resolve, reject) => {
+          video.onseeked = () => resolve();
+          video.onerror = () => reject(new Error("Cannot seek export"));
+        });
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(video, 0, 0);
+        const pixels = ctx.getImageData(400, 174, 480, 12).data;
+        let count = 0;
+        for (let i = 0; i < pixels.length; i += 4)
+          if (pixels[i] > 100 && pixels[i] > pixels[i + 1] * 1.3) count++;
+        return count;
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    },
+    {
+      base64: bytes.toString("base64"),
+      type: file.suggestedFilename().endsWith(".mp4")
+        ? "video/mp4"
+        : "video/webm",
+    },
+  );
+  expect(redPixels).toBeGreaterThan(100);
+});
+
 test("beat effects react to kicks in the playing audio", async ({ page }) => {
   await page.goto("/");
   const png = await page.evaluate(() => {

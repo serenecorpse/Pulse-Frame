@@ -27,6 +27,7 @@ import {
   initialProject,
   isBeatEffect,
   safeName,
+  stringInstruments,
   type Aspect,
   type Asset,
   type AssetInfo,
@@ -34,6 +35,7 @@ import {
   type EffectType,
   type Lane,
   type Project,
+  type StringInstrument,
 } from "@/lib/project";
 import { renderScene } from "@/lib/render";
 import { BeatTracker } from "@/lib/audio-features";
@@ -107,6 +109,12 @@ const effectInfo: Record<
     icon: "◉",
     description: "Bass-driven orb with beat shock rings",
     color: "#fb7185",
+  },
+  strings: {
+    icon: "≋",
+    description:
+      "Vibrating instrument strings driven by the music's frequencies",
+    color: "#ffffff",
   },
   "beat-zoom": {
     icon: "⤢",
@@ -267,6 +275,11 @@ function readProject(value: unknown): Project {
           ? ((saved.color ?? effect?.color) as string)
           : undefined,
       sensitivity: number(saved.sensitivity ?? effect?.sensitivity, 70),
+      stringInstrument: stringInstruments.includes(
+        saved.stringInstrument as StringInstrument,
+      )
+        ? (saved.stringInstrument as StringInstrument)
+        : undefined,
       isLyrics: saved.isLyrics === true,
     };
     if (!Number.isFinite(clip.start + clip.duration))
@@ -2370,11 +2383,33 @@ export default function Editor() {
                         " Position sets the focal point for zoom and vignette."}
                     </p>
                   )}
+                  {clip.effect === "strings" && (
+                    <label>
+                      Instrument
+                      <select
+                        className="inspector-select"
+                        value={clip.stringInstrument ?? "guitar"}
+                        onChange={(event) =>
+                          updateClip(clip.id, {
+                            stringInstrument: event.target
+                              .value as StringInstrument,
+                          })
+                        }
+                      >
+                        <option value="guitar">Guitar (6 strings)</option>
+                        <option value="veena">Veena / Sitar (resonance)</option>
+                        <option value="harp">Harp (12 strings)</option>
+                      </select>
+                    </label>
+                  )}
                   <label>
-                    Effect color{" "}
+                    {clip.effect === "strings" ? "String tint" : "Effect color"}{" "}
                     <input
                       type="color"
-                      value={clip.color || "#a78bfa"}
+                      value={
+                        clip.color ||
+                        (clip.effect === "strings" ? "#ffffff" : "#a78bfa")
+                      }
                       onChange={(event) =>
                         updateClip(clip.id, { color: event.target.value })
                       }

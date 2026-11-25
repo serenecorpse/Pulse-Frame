@@ -1,6 +1,7 @@
 export const BAND_COUNT = 64;
 
 export interface AudioFeatures {
+  sampleRate: number;
   /** Log-spaced, smoothed spectrum (0–1), low to high frequencies. */
   bands: Float32Array;
   /** Slowly falling maxima of `bands`, for peak caps. */
@@ -17,6 +18,7 @@ export interface AudioFeatures {
 
 export function silentFeatures(): AudioFeatures {
   return {
+    sampleRate: 48000,
     bands: new Float32Array(BAND_COUNT),
     peaks: new Float32Array(BAND_COUNT),
     bass: 0,
@@ -103,6 +105,7 @@ export class BeatTracker {
     this.clock += dt;
     const f = this.features,
       hasAudio = !!frequency?.length;
+    f.sampleRate = sampleRate;
     const raw = hasAudio
       ? logBands(frequency!, sampleRate)
       : new Float32Array(BAND_COUNT);

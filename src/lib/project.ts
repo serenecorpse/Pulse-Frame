@@ -12,7 +12,10 @@ export const equalizerEffects = [
   "neon",
   "particles",
   "pulse",
+  "strings",
 ] as const;
+export const stringInstruments = ["guitar", "veena", "harp"] as const;
+export type StringInstrument = (typeof stringInstruments)[number];
 export const beatEffects = [
   "beat-zoom",
   "shake",
@@ -66,6 +69,7 @@ export interface Clip {
   effect?: EffectType;
   color?: string;
   sensitivity?: number;
+  stringInstrument?: StringInstrument;
   isLyrics?: boolean;
   motion?: Motion;
 }

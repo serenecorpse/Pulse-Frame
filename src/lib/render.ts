@@ -1,6 +1,7 @@
 import { silentFeatures, type AudioFeatures } from "./audio-features";
 import { activeCueAtTime, parseLyrics } from "./lyrics";
 import { cameraAt, cameraCrop, drawCamera } from "./motion";
+import { instrumentStrings, stringDisplacement, stringLevel } from "./strings";
 import {
   beatEffects,
   dimensions,
@@ -460,6 +461,89 @@ function drawEqualizer(
   ctx.shadowColor = color;
   ctx.shadowBlur = 14 * unit;
   switch (effect) {
+    case "strings": {
+      const instrument = clip.stringInstrument ?? "guitar";
+      const notes = instrumentStrings[instrument];
+      const width = w * 0.7;
+      const height = Math.min(h * 0.6, w * 0.6);
+      const spacing = height / notes.length;
+      const tint = rgb(clip.color || "#ffffff");
+      const colorFor = (base: string) => {
+        const channels = rgb(base);
+        return `rgb(${channels.map((channel, i) => Math.round((channel * tint[i]) / 255)).join(",")})`;
+      };
+      const localTime = time - clip.start + (clip.offset || 0);
+      const strokeString = (
+        y: number,
+        length: number,
+        amplitude: number,
+        phase: number,
+      ) => {
+        ctx.beginPath();
+        for (let i = 0; i <= 80; i++) {
+          const position = i / 80;
+          const x = -length / 2 + position * length;
+          const displacement = amplitude * stringDisplacement(position, phase);
+          if (i === 0) ctx.moveTo(x, y + displacement);
+          else ctx.lineTo(x, y + displacement);
+        }
+        ctx.stroke();
+      };
+      if (instrument === "veena") {
+        ctx.save();
+        ctx.strokeStyle = colorFor("#ffffff");
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha *= 0.3;
+        ctx.lineWidth = Math.max(0.7, unit);
+        for (let i = 0; i < 10; i++) {
+          const y = -height / 2 + ((i + 0.5) * height) / 10;
+          const frequency = 98 * 2 ** (i / 12);
+          const amplitude = Math.min(
+            spacing * 0.1,
+            stringLevel(audio, frequency) * sensitivity * spacing * 0.1,
+          );
+          strokeString(
+            y,
+            width * 0.86,
+            amplitude,
+            localTime * (18 + i * 0.3) + i,
+          );
+        }
+        ctx.restore();
+      }
+      notes.forEach((note, i) => {
+        const y = -height / 2 + (i + 0.5) * spacing;
+        const energy = Math.max(0, stringLevel(audio, note.frequency) - 0.08);
+        const amplitude = Math.min(
+          spacing * 0.38,
+          energy * sensitivity * spacing * 0.48,
+        );
+        const phase = localTime * (20 + i * 1.4) + i * 1.7;
+        const color = colorFor(note.color);
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.shadowColor = color;
+        ctx.lineWidth = Math.max(1, (1.5 + Math.min(1, energy) * 1.2) * unit);
+        ctx.shadowBlur = (8 + energy * 14) * unit;
+        if (amplitude > 0.5 * unit) {
+          ctx.save();
+          ctx.globalAlpha *= 0.18;
+          ctx.lineWidth *= 0.7;
+          strokeString(y, width, amplitude, phase - 0.55);
+          strokeString(y, width, amplitude, phase - 1.1);
+          ctx.restore();
+        }
+        strokeString(y, width, amplitude, phase);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = color;
+        ctx.font = `${Math.max(9 * unit, Math.min(w, h) * 0.014)}px sans-serif`;
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        ctx.fillText(note.label, -width / 2 - w * 0.025, y);
+        ctx.restore();
+      });
+      break;
+    }
     case "mirror-bars": {
       const n = 48,
         total = w * 0.7,

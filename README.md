@@ -19,10 +19,12 @@ Import images, audio, video, LRC, SBV, or text files in the Media panel. Select 
 
 The Effects panel has two groups of audio-reactive layers, placed at the playhead:
 
-- **Equalizers** are drawn over the footage: Spectrum, Mirror bars, Radial bars, Circular, Waveform, Neon, Particles, and Pulse. Color, sensitivity, position, scale, and rotation are editable.
+- **Equalizers** are drawn over the footage: Spectrum, Mirror bars, Radial bars, Circular, Waveform, Neon, Particles, Pulse, and Strings. Color, sensitivity, position, scale, and rotation are editable.
 - **Beat FX** transform the image and video beneath them: Beat zoom, Shake, Glitch, RGB split, Hue shift, Color flash, Strobe, Duotone, Invert flash, VHS, Bloom, Vignette pulse, and Mirror. Equalizers and lyrics are drawn afterwards and stay unaffected. Position sets the focal point for Beat zoom and Vignette pulse.
 
 Beats are detected from bass energy in the playing audio, so beat effects are mostly idle while paused or silent. Strobe and Invert flash fire on alternate beats to limit flash frequency, but they may still affect photosensitive viewers. Image and video clips also have a **beat pulse** animation.
+
+Select **Strings** and choose Guitar, Veena / Sitar, or Harp in the Inspector. Each string reacts to nearby audio frequencies; the Veena mode also has faint sympathetic strings. String tint defaults to white, preserving the note colors. The visualization approximates frequency energy rather than detecting individual notes, and is included in video exports.
 
 Projects autosave in browser local storage. **Project files and autosave contain settings and media references, not the media bytes.** Re-import media with the same filename and type after opening a project or reloading the page. Legacy Pulseframe JSON projects can be opened in the new editor. The original app can still be opened directly at [legacy/index.html](./legacy/index.html).
 
