@@ -1,13 +1,27 @@
 (() => {
   const { parseLyrics, activeCueAtTime } = window.PulseframeLyrics;
   const results = document.querySelector("#results");
-  let passed = 0, failed = 0;
+  let passed = 0,
+    failed = 0;
   function test(name, fn) {
-    try { fn(); passed++; results.insertAdjacentHTML("beforeend", `<li class="pass">PASS ${name}</li>`); }
-    catch (error) { failed++; results.insertAdjacentHTML("beforeend", `<li class="fail">FAIL ${name}: ${error.message}</li>`); }
+    try {
+      fn();
+      passed++;
+      results.insertAdjacentHTML(
+        "beforeend",
+        `<li class="pass">PASS ${name}</li>`,
+      );
+    } catch (error) {
+      failed++;
+      results.insertAdjacentHTML(
+        "beforeend",
+        `<li class="fail">FAIL ${name}: ${error.message}</li>`,
+      );
+    }
   }
   function equal(actual, expected) {
-    if (actual !== expected) throw new Error(`expected ${actual} to equal ${expected}`);
+    if (actual !== expected)
+      throw new Error(`expected ${actual} to equal ${expected}`);
   }
 
   test("YouTube SBV timestamps parse start, end, and caption text", () => {
@@ -18,14 +32,18 @@
   });
 
   test("SBV preserves multiline captions and orders cues by start time", () => {
-    const cues = parseLyrics("0:00:05.000,0:00:06.000\nLater\n\n0:00:01.250,0:00:03.500\nFirst\nSecond");
+    const cues = parseLyrics(
+      "0:00:05.000,0:00:06.000\nLater\n\n0:00:01.250,0:00:03.500\nFirst\nSecond",
+    );
     equal(cues.length, 2);
     equal(cues[0].time, 1.25);
     equal(cues[0].text, "First\nSecond");
   });
 
   test("invalid or empty SBV cues are ignored", () => {
-    const cues = parseLyrics("0:00:03.000,0:00:02.000\nBackwards\n\n0:99:04.000,0:00:05.000\nInvalid minutes\n\n0:00:04.000,0:00:05.000\n");
+    const cues = parseLyrics(
+      "0:00:03.000,0:00:02.000\nBackwards\n\n0:99:04.000,0:00:05.000\nInvalid minutes\n\n0:00:04.000,0:00:05.000\n",
+    );
     equal(cues.length, 0);
   });
 
@@ -40,7 +58,9 @@
   });
 
   test("SBV captions activate only within their start and end window", () => {
-    const cues = parseLyrics("0:00:02.000,0:00:04.000\nFirst\n\n0:00:05.000,0:00:06.000\nSecond");
+    const cues = parseLyrics(
+      "0:00:02.000,0:00:04.000\nFirst\n\n0:00:05.000,0:00:06.000\nSecond",
+    );
     equal(activeCueAtTime(cues, 1), null);
     equal(activeCueAtTime(cues, 2).text, "First");
     equal(activeCueAtTime(cues, 4), null);
@@ -55,6 +75,7 @@
     equal(activeCueAtTime(plain, 4).text, "Second");
   });
 
-  document.querySelector("#summary").textContent = `${passed} passed · ${failed} failed`;
+  document.querySelector("#summary").textContent =
+    `${passed} passed · ${failed} failed`;
   document.title = `${failed ? "FAIL" : "PASS"} — Pulseframe lyrics tests`;
 })();
